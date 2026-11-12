@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: arovia-api
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+info:
+  app:
+    name: Arovia API
+    description: AI-powered operating platform for computer sales and service businesses
+    version: 0.1.0-SNAPSHOT

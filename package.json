@@ -1,0 +1,14 @@
+{
+  "name": "arovia",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @arovia/web dev",
+    "build:web": "pnpm --filter @arovia/web build",
+    "lint:web": "pnpm --filter @arovia/web lint",
+    "typecheck:web": "pnpm --filter @arovia/web typecheck"
+  }
+}

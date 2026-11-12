@@ -1,0 +1,32 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Java / Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+*.class
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local databases / uploads
+*.db
+*.sqlite*
+/uploads/
