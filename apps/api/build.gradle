@@ -43,6 +43,30 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
-    useJUnitPlatform()
+/*
+ * Unit tests exclude tests tagged "integration".
+ * They remain fast and do not require PostgreSQL.
+ */
+tasks.named('test', Test) {
+    useJUnitPlatform {
+        excludeTags 'integration'
+    }
+}
+
+/*
+ * Integration tests run against the explicitly configured
+ * PostgreSQL integration-test database.
+ */
+tasks.register('integrationTest', Test) {
+    group = 'verification'
+    description = 'Runs PostgreSQL-backed integration tests.'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+
+    shouldRunAfter tasks.named('test')
 }
