@@ -24,6 +24,7 @@ public class IdentityRegistrationService {
             "USER_EMAIL_VERIFICATION_REQUESTED";
 
     private final IdentityRegistrationStore registrationStore;
+    private final IdentityRequestRateLimiter requestRateLimiter;
     private final PasswordPolicy passwordPolicy;
     private final PasswordEncoder passwordEncoder;
     private final VerificationTokenGenerator tokenGenerator;
@@ -33,6 +34,7 @@ public class IdentityRegistrationService {
 
     public IdentityRegistrationService(
             IdentityRegistrationStore registrationStore,
+            IdentityRequestRateLimiter requestRateLimiter,
             PasswordPolicy passwordPolicy,
             PasswordEncoder passwordEncoder,
             VerificationTokenGenerator tokenGenerator,
@@ -42,6 +44,7 @@ public class IdentityRegistrationService {
             Duration verificationTokenTtl
     ) {
         this.registrationStore = registrationStore;
+        this.requestRateLimiter = requestRateLimiter;
         this.passwordPolicy = passwordPolicy;
         this.passwordEncoder = passwordEncoder;
         this.tokenGenerator = tokenGenerator;
@@ -60,6 +63,17 @@ public class IdentityRegistrationService {
         String email = suppliedEmail.trim();
         String normalizedEmail = email.toLowerCase(Locale.ROOT);
         String normalizedDisplayName = displayName.strip();
+
+        /*
+         * Both IP and email limits are checked before Argon2 hashing.
+         * A throttled request receives the same generic API response.
+         */
+        if (!requestRateLimiter.allowRegistration(
+                sourceIp,
+                normalizedEmail
+        )) {
+            return;
+        }
 
         String normalizedPassword = passwordPolicy.validateAndNormalize(
                 suppliedPassword,
@@ -88,10 +102,6 @@ public class IdentityRegistrationService {
                         rawVerificationToken
                 );
 
-        /*
-         * Encryption is performed before persistence.
-         * The raw token is never passed to the database store.
-         */
         EncryptedOutboxPayload encryptedPayload = outboxPayloadCipher.encrypt(
                 outboxId,
                 VERIFICATION_EVENT_TYPE,

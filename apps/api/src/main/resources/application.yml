@@ -64,6 +64,21 @@ arovia:
 
   identity:
     email-verification-ttl: ${AROVIA_EMAIL_VERIFICATION_TTL:PT24H}
+    email-verification-resend-cooldown: ${AROVIA_EMAIL_VERIFICATION_RESEND_COOLDOWN:PT1M}
+
+  rate-limit:
+    hmac-key: ${AROVIA_RATE_LIMIT_HMAC_KEY:}
+    cleanup-interval-ms: ${AROVIA_RATE_LIMIT_CLEANUP_INTERVAL_MS:900000}
+
+    registration:
+      window: ${AROVIA_REGISTRATION_RATE_WINDOW:PT1H}
+      ip-limit: ${AROVIA_REGISTRATION_IP_LIMIT:10}
+      email-limit: ${AROVIA_REGISTRATION_EMAIL_LIMIT:3}
+
+    resend:
+      window: ${AROVIA_RESEND_RATE_WINDOW:PT1H}
+      ip-limit: ${AROVIA_RESEND_IP_LIMIT:20}
+      email-limit: ${AROVIA_RESEND_EMAIL_LIMIT:5}
 
   outbox:
     poll-interval-ms: ${AROVIA_OUTBOX_POLL_INTERVAL_MS:5000}

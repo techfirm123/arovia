@@ -33,9 +33,14 @@ public class IdentityRegistrationStore {
                     normalized_email,
                     password_hash,
                     display_name,
-                    status
+                    status,
+                    verification_email_last_requested_at
                 )
-                VALUES (?, ?, ?, ?, ?, 'PENDING_EMAIL_VERIFICATION')
+                VALUES (
+                    ?, ?, ?, ?, ?,
+                    'PENDING_EMAIL_VERIFICATION',
+                    CURRENT_TIMESTAMP
+                )
                 ON CONFLICT (normalized_email) DO NOTHING
                 """,
                 registration.userAccountId(),
@@ -45,12 +50,6 @@ public class IdentityRegistrationStore {
                 registration.displayName()
         );
 
-        /*
-         * Duplicate normalized email:
-         * return without creating a token, outbox record or audit event.
-         *
-         * The API still returns the same generic response.
-         */
         if (insertedAccounts == 0) {
             return;
         }
