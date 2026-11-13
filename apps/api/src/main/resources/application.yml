@@ -1,6 +1,43 @@
+
 spring:
   application:
     name: arovia-api
+
+  datasource:
+    url: ${AROVIA_DB_URL:jdbc:postgresql://localhost:5432/arovia}
+    username: ${AROVIA_DB_USERNAME:arovia_app}
+    password: ${AROVIA_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    clean-disabled: true
+    out-of-order: false
+
+  sql:
+    init:
+      mode: never
+
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS:false}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -15,8 +52,28 @@ management:
       probes:
         enabled: true
 
+arovia:
+  app:
+    web-base-url: ${AROVIA_WEB_BASE_URL:http://localhost:3000}
+
+  web:
+    allowed-origin: ${AROVIA_WEB_ORIGIN:http://localhost:3000}
+
+  mail:
+    from: ${AROVIA_MAIL_FROM:no-reply@arovia.local}
+
+  identity:
+    email-verification-ttl: ${AROVIA_EMAIL_VERIFICATION_TTL:PT24H}
+
+  outbox:
+    poll-interval-ms: ${AROVIA_OUTBOX_POLL_INTERVAL_MS:5000}
+    batch-size: ${AROVIA_OUTBOX_BATCH_SIZE:10}
+    encryption:
+      key: ${AROVIA_OUTBOX_ENCRYPTION_KEY:}
+      key-version: ${AROVIA_OUTBOX_ENCRYPTION_KEY_VERSION:local-v1}
+
 info:
   app:
     name: Arovia API
-    description: AI-powered operating platform for computer sales and service businesses
+    description: AI-powered business operating platform
     version: 0.1.0-SNAPSHOT

@@ -1,3 +1,4 @@
+
 plugins {
     id 'java'
     id 'org.springframework.boot' version '4.1.2'
@@ -7,7 +8,7 @@ plugins {
 group = 'com.arovia'
 version = '0.1.0-SNAPSHOT'
 
-description = 'Arovia computer-business operating platform API'
+description = 'Arovia platform API'
 
 java {
     toolchain {
@@ -23,6 +24,19 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // PostgreSQL persistence and schema migrations
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Email infrastructure
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // Password hashing
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
