@@ -1,4 +1,3 @@
-
 package com.arovia.api.notifications.infrastructure;
 
 import java.time.Clock;
@@ -9,6 +8,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import com.arovia.api.notifications.domain.ClaimedOutboxMessage;
 import com.arovia.api.notifications.domain.EmailVerificationEmailPayload;
 import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
+import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +29,9 @@ public class EmailOutboxDispatcher {
     private static final String VERIFICATION_EVENT_TYPE =
             "USER_EMAIL_VERIFICATION_REQUESTED";
 
+    private static final String PASSWORD_RESET_EVENT_TYPE =
+            "USER_PASSWORD_RESET_REQUESTED";
+
     private static final int MAX_ATTEMPTS = 8;
     private static final long BASE_RETRY_SECONDS = 60;
     private static final long MAX_RETRY_SECONDS = 3600;
@@ -38,9 +41,13 @@ public class EmailOutboxDispatcher {
     private final OutboxPayloadCipher payloadCipher;
     private final JavaMailSender mailSender;
     private final Clock clock;
+
     private final String webBaseUrl;
     private final String fromAddress;
+
     private final Duration verificationTokenTtl;
+    private final Duration passwordResetTokenTtl;
+
     private final int batchSize;
 
     public EmailOutboxDispatcher(
@@ -48,11 +55,16 @@ public class EmailOutboxDispatcher {
             OutboxPayloadCipher payloadCipher,
             JavaMailSender mailSender,
             Clock applicationClock,
-            @Value("${arovia.app.web-base-url}") String webBaseUrl,
-            @Value("${arovia.mail.from}") String fromAddress,
+            @Value("${arovia.app.web-base-url}")
+            String webBaseUrl,
+            @Value("${arovia.mail.from}")
+            String fromAddress,
             @Value("${arovia.identity.email-verification-ttl:PT24H}")
             Duration verificationTokenTtl,
-            @Value("${arovia.outbox.batch-size:10}") int batchSize
+            @Value("${arovia.identity.password-reset-ttl:PT30M}")
+            Duration passwordResetTokenTtl,
+            @Value("${arovia.outbox.batch-size:10}")
+            int batchSize
     ) {
         this.outboxStore = outboxStore;
         this.payloadCipher = payloadCipher;
@@ -61,6 +73,7 @@ public class EmailOutboxDispatcher {
         this.webBaseUrl = removeTrailingSlashes(webBaseUrl);
         this.fromAddress = fromAddress;
         this.verificationTokenTtl = verificationTokenTtl;
+        this.passwordResetTokenTtl = passwordResetTokenTtl;
         this.batchSize = Math.max(1, batchSize);
     }
 
@@ -80,54 +93,50 @@ public class EmailOutboxDispatcher {
     }
 
     private void process(ClaimedOutboxMessage message) {
-        if (!VERIFICATION_EVENT_TYPE.equals(message.eventType())) {
-            outboxStore.markDeadLetter(
-                    message.id(),
-                    "UNSUPPORTED_EVENT_TYPE"
-            );
-
-            log.warn(
-                    "Unsupported email outbox event moved to dead letter: {}",
-                    message.id()
-            );
-
-            return;
-        }
-
-        EmailVerificationEmailPayload payload;
 
         try {
-            EncryptedOutboxPayload encryptedPayload =
-                    new EncryptedOutboxPayload(
-                            message.ciphertext(),
-                            message.nonce(),
-                            message.encryptionKeyVersion()
-                    );
+            if (VERIFICATION_EVENT_TYPE.equals(message.eventType())) {
+                sendVerificationEmail(
+                        decryptVerificationPayload(message)
+                );
 
-            payload = payloadCipher.decrypt(
-                    message.id(),
-                    message.eventType(),
-                    encryptedPayload
-            );
+            } else if (
+                    PASSWORD_RESET_EVENT_TYPE.equals(message.eventType())
+            ) {
+                sendPasswordResetEmail(
+                        decryptPasswordResetPayload(message)
+                );
+
+            } else {
+                outboxStore.markDeadLetter(
+                        message.id(),
+                        "UNSUPPORTED_EVENT_TYPE"
+                );
+
+                log.warn(
+                        "Unsupported email event moved to dead letter: {}",
+                        message.id()
+                );
+
+                return;
+            }
+
+        } catch (MailException exception) {
+            handleDeliveryFailure(message, exception);
+            return;
+
         } catch (RuntimeException exception) {
             outboxStore.markDeadLetter(
                     message.id(),
-                    "PAYLOAD_DECRYPTION_FAILED"
+                    "PAYLOAD_PROCESSING_FAILED"
             );
 
             log.error(
-                    "Email outbox payload could not be decrypted. "
+                    "Email outbox message processing failed. "
                             + "Message moved to dead letter: {}",
                     message.id()
             );
 
-            return;
-        }
-
-        try {
-            sendVerificationEmail(payload);
-        } catch (MailException exception) {
-            handleDeliveryFailure(message, exception);
             return;
         }
 
@@ -136,6 +145,42 @@ public class EmailOutboxDispatcher {
         log.info(
                 "Email outbox message delivered successfully: {}",
                 message.id()
+        );
+    }
+
+    private EmailVerificationEmailPayload decryptVerificationPayload(
+            ClaimedOutboxMessage message
+    ) {
+        EncryptedOutboxPayload encryptedPayload =
+                toEncryptedPayload(message);
+
+        return payloadCipher.decrypt(
+                message.id(),
+                message.eventType(),
+                encryptedPayload
+        );
+    }
+
+    private PasswordResetEmailPayload decryptPasswordResetPayload(
+            ClaimedOutboxMessage message
+    ) {
+        EncryptedOutboxPayload encryptedPayload =
+                toEncryptedPayload(message);
+
+        return payloadCipher.decryptPasswordReset(
+                message.id(),
+                message.eventType(),
+                encryptedPayload
+        );
+    }
+
+    private EncryptedOutboxPayload toEncryptedPayload(
+            ClaimedOutboxMessage message
+    ) {
+        return new EncryptedOutboxPayload(
+                message.ciphertext(),
+                message.nonce(),
+                message.encryptionKeyVersion()
         );
     }
 
@@ -151,6 +196,7 @@ public class EmailOutboxDispatcher {
         message.setFrom(fromAddress);
         message.setTo(payload.recipientEmail());
         message.setSubject("Verify your Arovia account");
+
         message.setText("""
                 Hello %s,
 
@@ -169,17 +215,52 @@ public class EmailOutboxDispatcher {
                 """.formatted(
                 payload.displayName(),
                 verificationUrl,
-                describeExpiry()
+                describeExpiry(verificationTokenTtl)
         ));
 
         mailSender.send(message);
     }
 
-    private String describeExpiry() {
-        long totalMinutes = Math.max(
-                1,
-                verificationTokenTtl.toMinutes()
-        );
+    private void sendPasswordResetEmail(
+            PasswordResetEmailPayload payload
+    ) {
+        String resetUrl = webBaseUrl
+                + "/reset-password?token="
+                + payload.resetToken();
+
+        SimpleMailMessage message = new SimpleMailMessage();
+
+        message.setFrom(fromAddress);
+        message.setTo(payload.recipientEmail());
+        message.setSubject("Reset your Arovia password");
+
+        message.setText("""
+                Hello %s,
+
+                We received a request to reset the password for your Arovia account.
+
+                You can choose a new password using this secure link:
+
+                %s
+
+                This link expires %s and can only be used once.
+
+                If you did not request a password reset, you can ignore this email.
+                Your existing password will remain unchanged.
+
+                Regards,
+                Arovia Team
+                """.formatted(
+                payload.displayName(),
+                resetUrl,
+                describeExpiry(passwordResetTokenTtl)
+        ));
+
+        mailSender.send(message);
+    }
+
+    private String describeExpiry(Duration duration) {
+        long totalMinutes = Math.max(1, duration.toMinutes());
 
         if (totalMinutes < 60) {
             return "in " + totalMinutes + " minutes";
@@ -203,7 +284,10 @@ public class EmailOutboxDispatcher {
         String errorCode = "SMTP_DELIVERY_FAILED";
 
         if (message.attemptCount() >= MAX_ATTEMPTS) {
-            outboxStore.markDeadLetter(message.id(), errorCode);
+            outboxStore.markDeadLetter(
+                    message.id(),
+                    errorCode
+            );
 
             log.error(
                     "Email delivery attempts exhausted. "
@@ -234,9 +318,13 @@ public class EmailOutboxDispatcher {
     }
 
     private long calculateRetryDelaySeconds(int attemptCount) {
-        int exponent = Math.min(Math.max(attemptCount - 1, 0), 10);
+        int exponent = Math.min(
+                Math.max(attemptCount - 1, 0),
+                10
+        );
 
-        long exponentialDelay = BASE_RETRY_SECONDS * (1L << exponent);
+        long exponentialDelay =
+                BASE_RETRY_SECONDS * (1L << exponent);
 
         long boundedDelay = Math.min(
                 exponentialDelay,

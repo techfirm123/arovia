@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -17,6 +16,11 @@ type VerificationState =
   | 'invalid'
   | 'missing'
   | 'failed';
+
+type CsrfTokenResponse = {
+  headerName: string;
+  token: string;
+};
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080'
@@ -103,12 +107,33 @@ export default function VerifyEmailClient() {
     setStatus('verifying');
 
     try {
+      /*
+       * Obtain the session-backed CSRF token first.
+       * credentials: include is required for the AROVIA_SESSION cookie.
+       */
+      const csrfResponse = await fetch(
+        `${API_BASE_URL}/api/v1/identity/csrf`,
+        {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        },
+      );
+
+      if (!csrfResponse.ok) {
+        throw new Error('Unable to obtain a CSRF token.');
+      }
+
+      const csrf = await csrfResponse.json() as CsrfTokenResponse;
+
       const response = await fetch(
         `${API_BASE_URL}/api/v1/identity/email-verification/confirm`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
+            [csrf.headerName]: csrf.token,
           },
           body: JSON.stringify({ token }),
           cache: 'no-store',

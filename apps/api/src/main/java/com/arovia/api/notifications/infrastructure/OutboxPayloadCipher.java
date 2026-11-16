@@ -1,4 +1,3 @@
-
 package com.arovia.api.notifications.infrastructure;
 
 import java.nio.charset.StandardCharsets;
@@ -13,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import com.arovia.api.notifications.domain.EmailVerificationEmailPayload;
 import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
+import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
@@ -23,7 +23,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class OutboxPayloadCipher {
 
-    private static final String TRANSFORMATION = "AES/GCM/NoPadding";
+    private static final String TRANSFORMATION =
+            "AES/GCM/NoPadding";
+
     private static final int NONCE_LENGTH_BYTES = 12;
     private static final int AUTHENTICATION_TAG_BITS = 128;
     private static final int AES_KEY_LENGTH_BYTES = 32;
@@ -36,7 +38,8 @@ public class OutboxPayloadCipher {
     public OutboxPayloadCipher(
             JsonMapper jsonMapper,
             SecureRandom secureRandom,
-            @Value("${arovia.outbox.encryption.key:}") String base64Key,
+            @Value("${arovia.outbox.encryption.key:}")
+            String base64Key,
             @Value("${arovia.outbox.encryption.key-version:local-v1}")
             String keyVersion
     ) {
@@ -50,6 +53,22 @@ public class OutboxPayloadCipher {
             UUID outboxId,
             String eventType,
             EmailVerificationEmailPayload payload
+    ) {
+        return encryptPayload(outboxId, eventType, payload);
+    }
+
+    public EncryptedOutboxPayload encrypt(
+            UUID outboxId,
+            String eventType,
+            PasswordResetEmailPayload payload
+    ) {
+        return encryptPayload(outboxId, eventType, payload);
+    }
+
+    private EncryptedOutboxPayload encryptPayload(
+            UUID outboxId,
+            String eventType,
+            Object payload
     ) {
         try {
             byte[] plaintext = jsonMapper.writeValueAsBytes(payload);
@@ -68,7 +87,9 @@ public class OutboxPayloadCipher {
                     )
             );
 
-            cipher.updateAAD(createAssociatedData(outboxId, eventType));
+            cipher.updateAAD(
+                    createAssociatedData(outboxId, eventType)
+            );
 
             byte[] ciphertext = cipher.doFinal(plaintext);
 
@@ -77,7 +98,10 @@ public class OutboxPayloadCipher {
                     nonce,
                     keyVersion
             );
-        } catch (GeneralSecurityException | JacksonException exception) {
+
+        } catch (
+                GeneralSecurityException | JacksonException exception
+        ) {
             throw new IllegalStateException(
                     "Unable to encrypt the email outbox payload.",
                     exception
@@ -89,6 +113,33 @@ public class OutboxPayloadCipher {
             UUID outboxId,
             String eventType,
             EncryptedOutboxPayload encryptedPayload
+    ) {
+        return decryptPayload(
+                outboxId,
+                eventType,
+                encryptedPayload,
+                EmailVerificationEmailPayload.class
+        );
+    }
+
+    public PasswordResetEmailPayload decryptPasswordReset(
+            UUID outboxId,
+            String eventType,
+            EncryptedOutboxPayload encryptedPayload
+    ) {
+        return decryptPayload(
+                outboxId,
+                eventType,
+                encryptedPayload,
+                PasswordResetEmailPayload.class
+        );
+    }
+
+    private <T> T decryptPayload(
+            UUID outboxId,
+            String eventType,
+            EncryptedOutboxPayload encryptedPayload,
+            Class<T> payloadType
     ) {
         try {
             if (!keyVersion.equals(encryptedPayload.keyVersion())) {
@@ -108,7 +159,9 @@ public class OutboxPayloadCipher {
                     )
             );
 
-            cipher.updateAAD(createAssociatedData(outboxId, eventType));
+            cipher.updateAAD(
+                    createAssociatedData(outboxId, eventType)
+            );
 
             byte[] plaintext = cipher.doFinal(
                     encryptedPayload.ciphertext()
@@ -116,9 +169,12 @@ public class OutboxPayloadCipher {
 
             return jsonMapper.readValue(
                     plaintext,
-                    EmailVerificationEmailPayload.class
+                    payloadType
             );
-        } catch (GeneralSecurityException | JacksonException exception) {
+
+        } catch (
+                GeneralSecurityException | JacksonException exception
+        ) {
             throw new IllegalStateException(
                     "Unable to decrypt the email outbox payload.",
                     exception
@@ -134,7 +190,9 @@ public class OutboxPayloadCipher {
         }
 
         try {
-            byte[] key = Base64.getDecoder().decode(base64Key.trim());
+            byte[] key = Base64.getDecoder().decode(
+                    base64Key.trim()
+            );
 
             if (key.length != AES_KEY_LENGTH_BYTES) {
                 throw new IllegalStateException(
@@ -143,6 +201,7 @@ public class OutboxPayloadCipher {
             }
 
             return key;
+
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException(
                     "Arovia outbox encryption key must be valid Base64.",

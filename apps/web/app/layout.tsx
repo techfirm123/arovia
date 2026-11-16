@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
+
 import './globals.css';
+
+import IdentityBoundary from '@/components/auth/IdentityBoundary';
 
 export const metadata: Metadata = {
   title: {
@@ -24,7 +27,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <IdentityBoundary>
+          {children}
+        </IdentityBoundary>
+      </body>
     </html>
   );
 }

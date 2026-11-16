@@ -1,4 +1,3 @@
-
 package com.arovia.api.notifications.infrastructure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -174,6 +173,7 @@ class EmailOutboxDispatcherTest {
                 "http://localhost:3000",
                 "no-reply@arovia.local",
                 Duration.ofHours(24),
+                Duration.ofMinutes(30),
                 1
         );
     }
