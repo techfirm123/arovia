@@ -1,4 +1,3 @@
-
 plugins {
     id 'java'
     id 'org.springframework.boot' version '4.1.2'
@@ -34,12 +33,20 @@ dependencies {
     // Email infrastructure
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+    // Authentication and authorization
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // Persistent server-side HTTP sessions
+    implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
+
     // Password hashing
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

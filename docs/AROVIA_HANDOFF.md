@@ -1,680 +1,182 @@
-
 # Arovia — Development Handoff
 
-**Last updated:** 13 November 2026  
-**Current milestone:** AROVIA-002A.1 — Global Identity Registration & Email Verification  
-**Status:** Core implementation and local end-to-end validation completed; final integration-test hardening and checkpoint commit pending.
+**Current milestone:** AROVIA-002A.2 — Authentication, Sessions & Account Recovery  
+**Status:** Complete — backend and frontend validation passed; manual authentication and password-recovery checks passed locally. Not merged to `develop`/`main` and not deployed.  
+**Last updated:** 16 November 2026
 
----
+## Product direction
 
-## 1. Product vision
+Arovia is evolving toward an AI-powered, composable business operating platform. The initial real-world validation domain remains computer sales and service. The broader cross-industry direction is an architectural north star, not a commitment to implement every industry immediately.
 
-Arovia is an AI-powered, composable business platform that enables businesses to build, configure, operate and continuously evolve integrated business applications.
+Businesses should be able to configure and evolve the capabilities they need. The platform should favor reusable business capabilities and explicit module boundaries over one rigid, industry-specific application. AI is an important platform capability, but core business operations must remain usable without depending on AI. Arovia should evolve incrementally through validated business workflows rather than speculative abstractions.
 
-The initial pilot focuses on computer sales and service businesses.
+The pilot business is a design partner and validation environment, not a process blueprint. The product team defines optimized workflows from first principles, then validates usability, exceptions, operational fit and outcomes with the pilot business.
 
-The larger architectural vision includes:
+## Development methodology
 
-1. Arovia Core Platform — global identity, organizations, memberships, permissions and shared infrastructure.
-2. Business Modules — customers, suppliers, products, inventory, sales, purchases, finance and service management.
-3. Industry Packs — combinations of reusable modules and workflows.
-4. Experience Composition — configurable navigation, dashboards, terminology and business experiences.
-5. Arovia Intelligence — business-facing and platform-facing AI capabilities.
-6. Governed Evolution — AI-assisted configuration and feature development with human approval.
-7. BusinessLab Integration — isolated simulation and experimentation capabilities.
+Build and design proceed hand in hand through complete vertical slices:
 
-This expanded vision is an architectural north star, not a reason to expand the immediate implementation scope.
+1. Define the business capability and desired outcome.
+2. Design the workflow and UX.
+3. Define domain, API, persistence, permissions and integration changes.
+4. Implement the complete slice.
+5. Test the implementation and walk through realistic business scenarios.
+6. Refine the design and update architecture and handoff documentation.
 
-Continue delivering focused vertical slices and validate real workflows with the initial computer sales and service pilot.
+Use one feature branch per implementation slice. Keep `main` stable and merge only after local validation. Provide complete, copy-paste-ready file contents with exact repository paths for implementation changes. Update this handoff after each completed milestone. Do not commit or push changes unless explicitly requested.
 
-BusinessLab remains a separate product. Production business data belongs to Arovia; simulations must not mutate production data.
+## Technology stack
 
----
-
-## 2. Architecture principles
-
-- Global UserAccount is separate from Organization.
-- Organization is the canonical tenant and data-isolation boundary.
-- OrganizationMembership grants access to an organization.
-- Workspace represents the user experience, not a separate tenant.
-- OrganizationProfile and BusinessProfile remain separate from identity.
-- A user may eventually belong to multiple organizations.
-- Tenant access must be resolved from authenticated membership.
-- Never trust client-supplied organization identifiers as authorization.
-- AI does not access the database directly.
-- Consequential actions require backend authorization, auditability and appropriate approval.
-- Keep a modular monolith; do not introduce microservices prematurely.
-- Preserve architectural boundaries without building speculative generic infrastructure.
-
----
-
-## 3. Technology stack
-
-### Backend
-- Java 21
+- Java 21 (locally verified with Java 21.0.11)
 - Spring Boot 4.1.2
-- Gradle Wrapper 9.9.0
-- Spring JDBC
-- Spring Security Crypto
-- Argon2id password hashing
-- Bouncy Castle provider
-- PostgreSQL 18.6
-- Flyway 12.4.0 through Spring Boot dependency management
-- Spring Mail / JavaMailSender
-- AES-256-GCM for encrypted outbox payloads
+- Gradle Wrapper 9.9.0 (`./gradlew`); use the wrapper for Arovia builds
+- Next.js App Router, React and TypeScript
+- pnpm workspace (root package manager declaration: pnpm 11.22.0)
+- PostgreSQL with Flyway migrations
+- Spring Session JDBC for server-side sessions
+- Modular monolith backend
+
+The machine also has global Gradle 9.9.1 installed, but the repository wrapper is pinned to 9.9.0. The wrapper distribution was reused from the BusinessLab project after the 9.9.1 wrapper download timed out. The Arovia wrapper now runs successfully; no Gradle downgrade or project build-file change was required for that workaround.
+
+## Current implementation
 
 ### Frontend
-- Next.js 16
-- React 19
-- TypeScript
-- pnpm workspace
-- Next.js App Router
 
-### Local development
-- IntelliJ IDEA
-- PostgreSQL
-- Mailpit
-- macOS
-- Java 21
-
-Use the Gradle Wrapper (`./gradlew`) rather than global Gradle.
-
----
-
-## 4. Repository structure
-
-Repository:
-
-`https://github.com/techfirm123/arovia`
-
-Relevant structure:
-
-```text
-arovia/
-├── apps/
-│   ├── api/
-│   │   ├── src/
-│   │   │   ├── main/
-│   │   │   │   ├── java/com/arovia/api/
-│   │   │   │   │   ├── identity/
-│   │   │   │   │   │   ├── application/
-│   │   │   │   │   │   ├── domain/
-│   │   │   │   │   │   ├── infrastructure/
-│   │   │   │   │   │   └── web/
-│   │   │   │   │   ├── notifications/
-│   │   │   │   │   │   ├── domain/
-│   │   │   │   │   │   └── infrastructure/
-│   │   │   │   │   └── system/
-│   │   │   │   └── resources/
-│   │   │   │       ├── db/migration/
-│   │   │   │       └── application.yml
-│   │   │   └── test/
-│   │   └── build.gradle
-│   │
-│   └── web/
-│       └── app/
-│           ├── verify-email/
-│           │   ├── page.tsx
-│           │   └── verify-email-client.tsx
-│           ├── layout.tsx
-│           ├── globals.css
-│           └── page.tsx
-│
-├── docs/
-│   ├── AROVIA_HANDOFF.md
-│   ├── AROVIA_ARCHITECTURE_DECISIONS.md
-│   ├── AROVIA-001_DISCOVERY_BASELINE.md
-│   └── AROVIA-002_IDENTITY_AND_ORGANIZATION_DESIGN.md
-│
-├── package.json
-└── pnpm-workspace.yaml
-```
-
----
-
-## 5. Git and branch strategy
-
-Default branch:
-
-`main`
-
-Initial foundation commit:
-
-`83768925455493e1eb01dc7e32db66efd9bf2ae6`
-
-Current feature branch:
-
-`feature/AROVIA-002-business-workspace-identity`
-
-The feature branch has been pushed to GitHub.
-
-The previously pushed identity implementation checkpoint contains:
-- Global identity registration.
-- Email verification.
-- Encrypted transactional email outbox.
-- Mail delivery dispatcher.
-- Verification frontend.
-- Identity and organization design documentation.
-- Updated architecture decisions.
-
-The subsequent V2 resend and rate-limiting implementation is awaiting its own checkpoint commit and push.
-
-Do not merge into `main` until the complete feature slice is reviewed and validated.
-
----
-
-## 6. Current milestone: AROVIA-002A.1
-
-### Objective
-
-Implement global user registration, verified email ownership and the reliable email-delivery foundation.
-
-The implementation must remain independent of organization creation and industry-specific business configuration.
-
-### 6.1 Global identity
-
-Implemented UserAccount fields:
-
-- UUID identifier.
-- Email.
-- Normalized email.
-- Password hash.
-- Display name.
-- Account status.
-- Email verification timestamp.
-- Created and updated timestamps.
-- Optimistic version field.
-- Last verification email request timestamp.
-
-Initial account states:
-
-- `PENDING_EMAIL_VERIFICATION`
-- `ACTIVE`
-- `SUSPENDED`
-- `DEACTIVATED`
-
-The user account is global and has no organization_id.
-
-### 6.2 Password protection
-
-Implemented:
-- Argon2id password hashing.
-- 16-byte salt.
-- 32-byte output hash.
-- Parallelism: 1.
-- Memory: 19,456 KiB.
-- Iterations: 2.
-- Unicode NFC normalization.
-- Minimum 15 code points.
-- Maximum 128 code points.
-- Initial local password denylist.
-- Rejection of passwords containing the email local part.
-
-Password hashing occurs before the registration database transaction.
-
-A comprehensive compromised-password checker is still required before public launch.
-
-### 6.3 Verification tokens
-
-Implemented:
-- 256-bit cryptographically random token.
-- URL-safe Base64 without padding.
-- SHA-256 token hash persisted in PostgreSQL.
-- 24-hour initial expiry.
-- Single-use verification.
-- Token revocation when a replacement is created.
-- Atomic account activation and token consumption.
-
-The verification frontend requires an explicit user action. A browser GET request or email security scanner does not automatically consume the token.
-
----
-
-## 7. Transactional email outbox
-
-### Encrypted payload
-
-Implemented:
-- AES-256-GCM.
-- 12-byte random nonce.
-- 128-bit authentication tag.
-- Outbox ID and event type bound as associated data.
-- Encryption-key version stored with each message.
-- Separate key from the rate-limit HMAC key.
-
-The encrypted payload contains the email recipient, display name and raw verification token.
-
-The token is stored as a hash in the verification-token table.
-
-Raw verification URLs and tokens must never be written to application logs.
-
-### Delivery lifecycle
-
-Implemented statuses:
-
-- `PENDING`
-- `PROCESSING`
-- `RETRY`
-- `SENT`
-- `DEAD_LETTER`
-
-The dispatcher:
-- Claims records using PostgreSQL row locking and `SKIP LOCKED`.
-- Commits the claim before SMTP delivery.
-- Sends outside the database transaction.
-- Retries transient SMTP failures using exponential backoff and jitter.
-- Uses a maximum of eight delivery attempts.
-- Moves exhausted messages to dead letter.
-- Clears encrypted payload and nonce after successful delivery.
-
-Delivery semantics are at-least-once. Duplicate email delivery is possible if the SMTP provider accepts a message but the application crashes before marking it sent.
-
-Verification tokens remain single-use.
-
-### Local email setup
-
-Mailpit:
-- SMTP: `localhost:1025`
-- Web inbox: `http://localhost:8025`
-
-The local test email sender is:
-
-`no-reply@arovia.local`
-
----
-
-## 8. Database migrations
-
-PostgreSQL database:
-
-`arovia`
-
-Application database role:
-
-`arovia_app`
-
-### V1 — Identity registration foundation
-
-File:
-
-`apps/api/src/main/resources/db/migration/V1__create_identity_registration_foundation.sql`
-
-Creates:
-
-1. `user_account`
-2. `email_verification_token`
-3. `email_outbox`
-4. `identity_audit_event`
-
-Important constraints include:
-- Unique normalized email.
-- Account lifecycle state check.
-- Verification token hash uniqueness.
-- One active verification token per user.
-- Outbox status and payload consistency checks.
-- Foreign keys between identity records.
-- Audit record ownership.
-
-V1 was applied successfully to PostgreSQL 18.6.
-
-### V2 — Rate limiting and resend cooldown
-
-File:
-
-`apps/api/src/main/resources/db/migration/V2__add_identity_rate_limiting_and_resend_cooldown.sql`
-
-Adds:
-- `verification_email_last_requested_at` to UserAccount.
-- `identity_rate_limit_bucket`.
-- HMAC-based subject identifiers.
-- Persistent rate-limit counters.
-- Bucket expiry and cleanup index.
-
-V2 was applied successfully.
-
-Observed Flyway history:
-
-| Version | Description | Result |
+- A responsive Arovia workspace shell is running locally at `http://localhost:3000`.
+- Navigation includes Overview, Customers, Sales & Billing, Service Desk, Products & Inventory, Purchasing, Finance, Communications, AI Workforce, Reports and Settings.
+- The Overview dashboard includes illustrative KPI cards, a service-desk preview, recent activity, an attention panel and an AI workforce preview.
+- Dashboard figures and activity rows are illustrative sample data; they are not backed by business records.
+- Quick-create, navigation, search filtering, notification preview and mobile sidebar interactions are local UI interactions.
+- Authentication pages are implemented: `/login`, `/forgot-password`, `/reset-password` and `/verify-email`.
+- `IdentityBoundary` checks the current identity, protects the workspace, redirects unauthenticated users to login and provides sign-out behaviour.
+- The frontend identity API helper performs credentialed API calls and obtains/sends the CSRF token for protected requests.
+- The login page now presents one password-recovery link: **Forgot your password?**
+- The dashboard remains a presentation shell. Its sample figures and activity rows are not persistent business records.
+
+### Backend — identity and authentication
+
+- Spring Boot application bootstrap is running locally on port `8080`.
+- `GET /api/v1/system/health` returns an application health payload. Actuator health/info endpoints are configured.
+- PostgreSQL persistence and Flyway migrations are in place for the identity foundation.
+- Registration creates a user identity and stores a password hash using Argon2id.
+- Email verification uses cryptographically random tokens; only token hashes are persisted. Verification messages are delivered through an encrypted transactional outbox and SMTP.
+- Resend verification is rate-limited. The email-verification page requires an explicit user action so mail scanners do not consume a verification token merely by opening the link.
+- Login uses Spring Security's authentication manager and DAO authentication provider.
+- Authenticated state is stored in server-side Spring Session JDBC sessions. The browser receives the `AROVIA_SESSION` cookie with HttpOnly and SameSite=Lax settings; Secure is enabled for production configuration.
+- Session fixation protection changes the session identifier after authentication. An absolute session lifetime filter enforces the configured maximum lifetime.
+- CSRF protection uses a session-backed token repository and the `X-CSRF-TOKEN` request header. A CSRF bootstrap endpoint is available to the frontend.
+- Login attempts are rate-limited using IP address and normalized email. Login failures use a generic credentials message.
+- Identity session endpoints are implemented: create session (login), read current identity (`/me`) and delete current session (logout).
+- Password recovery request returns a generic accepted response to avoid disclosing whether an account exists. Only active, verified accounts are eligible for reset email delivery.
+- Password-reset tokens are cryptographically random; only their SHA-256 hashes are persisted. The raw token is held in the encrypted outbox payload for delivery. Tokens expire after 30 minutes and can be consumed only once.
+- A new reset request revokes the prior active reset token. A successful reset updates the Argon2id password hash, consumes the reset token, revokes other outstanding reset tokens and invalidates the user's existing server-side sessions.
+- Password-reset request and confirmation paths have rate limits. Relevant identity and reset events are audited.
+- The email outbox dispatcher handles both email-verification and password-reset messages while retaining retry/dead-letter behaviour.
+
+### Persistence and migrations
+
+- Flyway migrations V1–V3 establish the current identity, verification/notification and authentication/session/password-reset persistence foundations.
+- V3 creates the Spring Session JDBC tables (`spring_session` and `spring_session_attributes`) and `password_reset_token`.
+- `password_reset_token` stores token hashes and lifecycle timestamps; the raw reset token is not stored in the token table.
+- Spring Session's `principal_name` is sized to support normalized email addresses and indexed for user-session lookup/revocation.
+- No business organization/workspace provisioning tables were introduced in the identity slice.
+
+### Not yet implemented
+
+- Business organization/workspace provisioning and business profile setup.
+- Organization membership lifecycle, invitations and role/permission management.
+- Tenant authorization and isolation enforcement for business data.
+- Persistent customer, product, inventory, purchasing, sales, billing, finance and service workflows.
+- Official WhatsApp Business Platform integration.
+- AI workers and approval workflows.
+- Production deployment and production SMTP/security configuration verification.
+
+## Architecture principles and decisions
+
+- Keep a modular monolith; do not split deployable services prematurely.
+- Platform concerns and business-domain capabilities must have clear boundaries.
+- User identity is platform-level. Organization/workspace provisioning and tenant membership are subsequent capabilities; identity registration alone does not create a business organization.
+- Organization/workspace context must become the canonical tenant boundary for business data. Tenant-aware authorization must be enforced before business data is introduced.
+- The first real-world business domain remains computer sales and service, while preserving clean boundaries for later composability and industry expansion.
+- A product catalogue item, physical stock unit, customer-owned device and repair job are separate concepts.
+- Inventory changes must be represented by traceable stock movements.
+- AI workers call application use cases through controlled tools; they do not access the database directly.
+- Consequential actions use backend-enforced permissions, approval policies and audit records.
+- Avoid introducing persistent schema until the corresponding workflow has been designed.
+- Password recovery must not reveal account existence; reset tokens are single-use, time-limited, stored as hashes and delivered through the encrypted outbox.
+- Password changes revoke existing sessions so previously authenticated browsers must authenticate again.
+
+## Validation status
+
+The following results were reported by the developer as passing on 16 November 2026. These commands were run locally by the developer; they were not independently re-executed while preparing this handoff.
+
+| Area | Command / check | Result |
 |---|---|---|
-| 1 | create identity registration foundation | Success |
-| 2 | add identity rate limiting and resend cooldown | Success |
-
-V1 and V2 must remain immutable after application. Future schema changes require additional migration files.
-
----
-
-## 9. Implemented API endpoints
-
-### Registration
-
-`POST /api/v1/identity/registrations`
-
-- Validates registration input.
-- Normalizes email.
-- Applies registration rate limits.
-- Validates password policy.
-- Hashes password.
-- Generates verification token.
-- Encrypts verification email payload.
-- Creates account, token, outbox record and audit event transactionally.
-- Returns a generic HTTP 202 response.
-
-Duplicate registrations return the same generic response.
-
-### Email verification confirmation
-
-`POST /api/v1/identity/email-verification/confirm`
-
-- Accepts a raw verification token.
-- Hashes the token.
-- Locks the token and user records.
-- Validates expiry, revocation and consumption state.
-- Activates the account.
-- Consumes the token.
-- Creates an audit event.
-- Commits all changes atomically.
-
-Success returns HTTP 204.
-
-### Email verification resend
-
-`POST /api/v1/identity/email-verification/resend`
-
-- Applies IP and email rate limits.
-- Returns the same generic response for unknown, verified, cooldown-blocked and rate-limited addresses.
-- Enforces a 60-second account-level resend cooldown.
-- Revokes previous unconsumed verification tokens.
-- Supersedes pending or retrying old delivery messages.
-- Creates a replacement token and encrypted outbox message transactionally.
-
-Success returns HTTP 202.
-
-### System health
-
-`GET /api/v1/system/health`
-
-The initial AROVIA-001 health endpoint remains available.
-
----
-
-## 10. Rate limiting
-
-Rate-limit subjects are stored as HMAC-SHA-256 digests.
-
-The HMAC key is separate from the outbox encryption key.
-
-Initial configurable limits:
-
-| Operation | IP limit | Email limit |
-|---|---:|---:|
-| Registration | 10/hour | 3/hour |
-| Verification resend | 20/hour | 5/hour |
-
-Registration and resend counters are stored in PostgreSQL.
-
-The implementation uses atomic PostgreSQL upserts, so counters are shared across application instances.
-
-A scheduled cleanup job removes expired buckets in bounded batches.
-
-Manual validation:
-- Four registration attempts were made for one email.
-- The email rate-limit counter reached four.
-- One account was created.
-- One email outbox record was created.
-- One verification email was received in Mailpit.
-
-The duplicate-account constraint also independently prevents duplicate account and outbox creation. Therefore, this manual scenario confirms counter persistence and duplicate handling, but is not a standalone proof of the rate-limit rejection decision.
-
----
-
-## 11. Frontend verification experience
-
-Route:
-
-`/verify-email`
-
-Files:
-- `apps/web/app/verify-email/page.tsx`
-- `apps/web/app/verify-email/verify-email-client.tsx`
-
-Implemented:
-- Arovia-branded verification page.
-- Explicit Verify Email Address button.
-- Verification progress state.
-- Successful verification state.
-- Invalid/expired token state.
-- Failed-request state with retry.
-- Removal of token from the visible browser URL.
-- Next.js Link navigation.
-- React hook-compliant state handling.
-- Suspense boundary for `useSearchParams`.
-
-The page calls:
-
-`POST http://localhost:8080/api/v1/identity/email-verification/confirm`
-
-The backend allows the configured frontend origin using explicit CORS configuration.
-
-The existing AROVIA-001 dashboard remains an illustrative preview. It is not yet connected to authenticated workspace data.
-
----
-
-## 12. Environment configuration
-
-The following environment variables are required locally.
-
-Database:
-- `AROVIA_DB_URL`
-- `AROVIA_DB_USERNAME`
-- `AROVIA_DB_PASSWORD`
-
-Outbox encryption:
-- `AROVIA_OUTBOX_ENCRYPTION_KEY`
-- `AROVIA_OUTBOX_ENCRYPTION_KEY_VERSION`
-
-Rate-limit privacy:
-- `AROVIA_RATE_LIMIT_HMAC_KEY`
-
-Optional configuration:
-- `AROVIA_WEB_BASE_URL`
-- `AROVIA_WEB_ORIGIN`
-- `AROVIA_MAIL_FROM`
-- `AROVIA_EMAIL_VERIFICATION_TTL`
-- `AROVIA_EMAIL_VERIFICATION_RESEND_COOLDOWN`
-- `AROVIA_OUTBOX_POLL_INTERVAL_MS`
-- `AROVIA_OUTBOX_BATCH_SIZE`
-- `AROVIA_RATE_LIMIT_CLEANUP_INTERVAL_MS`
-- `AROVIA_REGISTRATION_RATE_WINDOW`
-- `AROVIA_REGISTRATION_IP_LIMIT`
-- `AROVIA_REGISTRATION_EMAIL_LIMIT`
-- `AROVIA_RESEND_RATE_WINDOW`
-- `AROVIA_RESEND_IP_LIMIT`
-- `AROVIA_RESEND_EMAIL_LIMIT`
-
-Do not store actual passwords, AES keys or HMAC keys in this document or source control.
-
-Keep encryption and HMAC keys stable across application restarts. Do not generate replacements while records or rate-limit buckets depend on the existing keys.
-
-The local IntelliJ Run Configuration should contain the required environment variables.
-
----
-
-## 13. Validation results
-
-### Backend
-
-The user reported that:
-
-`cd apps/api && ./gradlew clean test`
-
-passed after the V2 and resend/rate-limit implementation.
-
-Individual test coverage includes:
-- Password policy.
-- Argon2id hashing.
-- Verification-token generation.
-- Encrypted outbox payload.
-- Ciphertext tampering rejection.
-- Associated-data validation.
-- Email dispatcher success and retry behavior.
-- Unsupported outbox event handling.
-- Verification token hashing.
-- Rate-limit subject hashing.
-- Rate-limit application-service decisions.
-- Resend preparation.
-
-### Frontend
-
-The user reported successful execution of:
-
-- `pnpm lint:web`
-- `pnpm typecheck:web`
-- `pnpm build:web`
-
-React lint issues in the verification page were corrected.
-
-### Manual end-to-end registration
-
-Successfully validated:
-1. Registration API returned HTTP 202.
-2. UserAccount was created with `PENDING_EMAIL_VERIFICATION`.
-3. Password hash was confirmed to use Argon2id.
-4. Verification token hash was persisted.
-5. Encrypted outbox payload was created.
-6. Mailpit received the verification email.
-7. The verification page opened successfully.
-8. User explicitly confirmed email verification.
-9. Account status became `ACTIVE`.
-10. Verification token was consumed.
-11. Outbox status became `SENT`.
-12. Encrypted payload and nonce were cleared.
-13. Both registration and verification audit events were recorded.
-
-### Manual resend validation
-
-Successfully validated:
-- Original verification token was revoked.
-- Replacement token was created.
-- Replacement token became the active token.
-- Old and replacement verification emails were delivered through Mailpit.
-- The 60-second resend cooldown was observed.
-- The latest token remained valid for the configured 24-hour period.
-
-### Manual rate-limit validation
-
-Observed:
-- Four registration attempts for one email.
-- Persisted rate-limit counter reached four.
-- Only one account existed for that email.
-- Only one outbox email record existed.
-- Mailpit showed one delivery for the test registration.
-
-### Remaining integration-test hardening
-
-The following automated database-level scenarios still need dedicated tests:
-
-- PostgreSQL rate-limit upsert boundary behavior.
-- Concurrent registration attempts.
-- Concurrent resend attempts and cooldown locking.
-- Registration transaction rollback.
-- Resend transaction rollback.
-- Concurrent verification confirmation.
-- Outbox claim behavior with multiple workers.
-- Recovery from expired processing leases.
-- Rate-limit cleanup job behavior.
-
-Do not represent mocked unit tests or manual checks as full PostgreSQL integration tests.
-
----
-
-## 14. Known limitations and production hardening
-
-Before public exposure:
-
-1. Add a comprehensive compromised-password checker.
-2. Complete distributed abuse protection and review limits.
-3. Configure trusted proxy handling and edge-level rate limiting.
-4. Implement encryption-key rotation and a decryption key ring.
-5. Implement HMAC key rotation planning.
-6. Add operational monitoring for dead-letter email messages.
-7. Review email provider deliverability and sender-domain configuration.
-8. Add account verification resend UI.
-9. Add full PostgreSQL integration tests.
-10. Review security logging and retention policies.
-11. Perform deployment-specific security and privacy review.
-
-Current registration and resend endpoints are local-development capabilities and are not yet approved for public exposure.
-
----
-
-## 15. Not yet implemented
-
-### AROVIA-002A.2
-- Login.
-- Logout.
-- Server-side authentication sessions.
-- Session persistence.
-- Session fixation protection.
-- CSRF protection.
-- Current authenticated identity endpoint.
-- Password-reset request.
-- Password-reset confirmation.
-- Session revocation after password change.
-- Login abuse protection.
-
-### AROVIA-002B
-- Organization persistence.
-- OrganizationProfile.
-- BusinessProfile foundation.
-- OrganizationLocation.
-- Initial owner membership.
-- Organization provisioning.
-- Atomic organization onboarding.
-
-### AROVIA-002C
-- Organization context.
-- Membership access enforcement.
-- Organization roles and permissions.
-- Tenant-aware service and repository access.
-- Cross-tenant security tests.
-
-No Organization table has been introduced in V1 or V2.
-
----
-
-## 16. Next implementation slice
-
-**AROVIA-002A.1 — Final integration hardening and closure**
-
-Remaining:
-- Add or complete PostgreSQL integration tests.
-- Validate rate-limit rejection independently of duplicate-account suppression.
-- Review the complete feature diff.
-- Update this handoff with final test results.
-- Commit and push the completed slice.
-
-After closure, proceed to:
-
-**AROVIA-002A.2 — Authentication, Sessions and Account Recovery**
-
-The next slice must use server-managed sessions and should not introduce JWT complexity without a concrete requirement.
-
----
-
-## 17. Engineering workflow
-
-For every implementation slice:
-
-1. Work on a dedicated feature branch.
-2. Inspect existing implementation before modifying it.
-3. Define workflow and domain behavior.
-4. Implement complete, copy-ready files.
-5. Validate backend and frontend.
-6. Test real database and external-service behavior where applicable.
-7. Update `AROVIA_HANDOFF.md`.
-8. Review `git diff` and `git status`.
-9. Commit and push the feature branch.
-10. Merge only after review and validation.
-
-`main` remains the stable integration branch.
-
-Never commit secrets, local environment files, generated build output or IDE-specific files.
+| Gradle wrapper | `cd apps/api && ./gradlew --version` | Previously passed; Gradle 9.9.0, JVM 21.0.11 |
+| Backend unit tests | `cd apps/api && ./gradlew clean test` | Passed |
+| Backend integration tests | `cd apps/api && ./gradlew integrationTest` | Passed |
+| Frontend lint | `pnpm lint:web` | Passed |
+| Frontend typecheck | `pnpm typecheck:web` | Passed |
+| Frontend production build | `pnpm build:web` | Passed |
+| Registration and verification | Local end-to-end flow | Previously validated in AROVIA-002A.1 |
+| Login and session | Login, identity retrieval, refresh persistence and logout flow | Demonstrated locally |
+| Password recovery request | Forgot-password request and generic confirmation | Demonstrated locally |
+| Reset email | Mailpit received the reset email with the local reset URL | Demonstrated locally |
+| Password reset | Reset page accepted a new password and displayed success confirmation | Demonstrated locally |
+| Old password rejection | Login attempt with the previous password returned the generic invalid-credentials message | Passed |
+| Session revocation | Browser A was logged out after the password was reset in Browser B | Passed |
+| Authenticated workspace | Sign-in with the new password returned to the Arovia dashboard | Demonstrated locally |
+| Visual review | Login, forgot-password, reset-password, reset-success and dashboard screens | Reviewed locally |
+
+The reset email is sent from the configured local Mailpit/SMTP environment. Production email delivery, deployment cookie settings, production secrets and production-origin CORS have not been validated by this local slice.
+
+## AROVIA-001 handoff record
+
+### 2026-11-12 — AROVIA-001 Product & Engineering Foundation
+
+- **Status:** Complete — local validation passed; initial foundation commit pushed to GitHub.
+- **Branch:** `feature/AROVIA-001-foundation` was pushed first; `main` was then created from the same validated commit and pushed. GitHub default branch is set to `main`.
+- **Commit:** `83768925455493e1eb01dc7e32db66efd9bf2ae6` (initial AROVIA-001 foundation commit; shared by the initial `main` baseline and feature branch).
+- **Scope/files:** Starter monorepo and workspace shell; Spring Boot API bootstrap and health endpoint; Gradle Wrapper 9.9.0 files under `apps/api/gradle/wrapper/` plus `apps/api/gradlew` and `apps/api/gradlew.bat`; ESLint JSX apostrophe correction in `apps/web/app/page.tsx`.
+- **Data or migration impact:** None at this milestone.
+- **Validation:** `./gradlew clean test`, `pnpm lint:web`, `pnpm typecheck:web` and `pnpm build:web` passed. The API health endpoint returned `UP`; the local frontend dashboard rendered.
+- **Manual acceptance:** Local dashboard visually reviewed. Sample data and placeholder modules are understood to be non-persistent preview content.
+- **Deployment:** Not deployed; local development only.
+- **Decisions / follow-ups:** Standardize Arovia builds on the Gradle 9.9.0 wrapper. Keep the generated wrapper files in version control. The validated foundation is pushed, and `main` is the GitHub default branch. Continue using one feature branch per implementation slice.
+- **Next slice:** AROVIA-002 — Business Workspace & Identity Foundation.
+
+## AROVIA-002 milestone records
+
+### AROVIA-002A.1 — Registration and Email Verification
+
+- **Status:** Complete — backend integration and frontend validation were reported as passing.
+- **Scope:** User registration, password hashing, email-verification token generation and hashing, encrypted transactional email outbox, SMTP delivery, verification confirmation, resend cooldown/rate limiting and audit events.
+- **Security decisions:** Raw verification tokens are not persisted in plaintext. Email verification requires an explicit action in the browser to avoid link-prefetch/mail-scanner token consumption. Resend requests are rate-limited.
+- **Validation:** The developer reported the registration/verification integration suite passed (7 tests, 0 skipped); frontend lint, typecheck and production build passed.
+- **Known boundary:** This slice establishes user identity only; it does not provision a business organization or implement tenant authorization.
+
+### 2026-11-16 — AROVIA-002A.2 Authentication, Sessions & Account Recovery
+
+- **Status:** Complete — backend unit tests, backend integration tests, frontend lint/typecheck/build and the manual security scenarios listed above passed locally.
+- **Branch:** `feature/AROVIA-002A2-authentication-sessions` is the implementation branch for this slice. No merge to `develop`/`main` or deployment is recorded here.
+- **Scope/files:**
+  - Backend security/session configuration and session controller in `apps/api/src/main/java/com/arovia/api/identity/infrastructure/IdentityWebSecurityConfiguration.java` and `apps/api/src/main/java/com/arovia/api/identity/web/IdentitySessionController.java`.
+  - Flyway V3 schema in `apps/api/src/main/resources/db/migration/V3__create_authentication_sessions_and_password_reset_tokens.sql`.
+  - Password-reset payload, cipher/outbox dispatch support, request rate limiter, exceptions, persistence store, service, request/confirmation DTOs, response DTOs and controller under `apps/api/src/main/java/com/arovia/api/identity/` and `apps/api/src/main/java/com/arovia/api/notifications/`.
+  - Outbox dispatcher test helper updated for the additional password-reset TTL constructor argument in `apps/api/src/test/java/com/arovia/api/notifications/infrastructure/EmailOutboxDispatcherTest.java`.
+  - Frontend identity API helper at `apps/web/lib/identity-api.ts`; shared auth components/styles under `apps/web/components/auth/`; login, forgot-password and reset-password pages under `apps/web/app/`; and `apps/web/app/layout.tsx` updated to apply the identity boundary.
+  - `apps/web/components/auth/LoginForm.tsx` uses a single **Forgot your password?** recovery link.
+- **Endpoints:** `POST /api/v1/identity/sessions`, `GET /api/v1/identity/me`, `DELETE /api/v1/identity/sessions/current`, `GET /api/v1/identity/csrf`, `POST /api/v1/identity/password-resets` and `POST /api/v1/identity/password-resets/confirm`.
+- **Security behaviour:** Server-side sessions, CSRF protection, session fixation protection, absolute session lifetime, login and password-reset rate limits, generic login/recovery responses, single-use 30-minute reset tokens, encrypted reset-email outbox delivery, password hashing and session invalidation after password change.
+- **Validation:** `cd apps/api && ./gradlew clean test` — passed; `cd apps/api && ./gradlew integrationTest` — passed; `pnpm lint:web` — passed; `pnpm typecheck:web` — passed; `pnpm build:web` — passed.
+- **Manual acceptance:** Forgot-password request, Mailpit delivery, reset link, password update, old-password rejection, Browser A session revocation after reset in Browser B, new-password login and dashboard access were demonstrated locally.
+- **Data or migration impact:** V3 adds Spring Session JDBC tables and password-reset token persistence. No organization/workspace tables were added.
+- **Deployment:** Local development only. Do not infer production readiness from local validation.
+- **Known follow-ups:** Verify production CORS origins, Secure cookie behaviour, SMTP delivery, encryption-key provisioning/rotation and session revocation under the production deployment configuration before release.
+- **Next slice:** AROVIA-002B — Organization/Business Workspace Provisioning. Follow with AROVIA-002C — Tenant Authorization & Isolation before introducing tenant-owned business data.
+
+## Next milestone — AROVIA-002B Organization / Business Workspace Provisioning
+
+Design and implement organization/workspace creation as a separate complete vertical slice. Define the onboarding flow, business profile, organization lifecycle, owner membership and the relationship between global user identity and organization membership. Do not treat successful identity registration as automatic organization provisioning unless the approved onboarding workflow explicitly requires it.
+
+After provisioning, implement AROVIA-002C tenant authorization and isolation. The backend must establish and enforce the active organization context and verify membership/permissions on every tenant-scoped operation before customer, product, inventory, purchasing, sales, billing, finance or service data is introduced.
