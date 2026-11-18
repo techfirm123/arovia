@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
@@ -30,7 +31,7 @@ export default function LoginForm() {
     try {
       await loginIdentity(email.trim(), password);
 
-      router.replace('/');
+      router.replace('/app');
       router.refresh();
     } catch (exception) {
       if (

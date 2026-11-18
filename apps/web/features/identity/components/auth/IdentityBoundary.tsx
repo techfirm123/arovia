@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -23,6 +24,8 @@ type IdentityBoundaryProps = {
 };
 
 const PUBLIC_IDENTITY_ROUTES = [
+  '/',
+  '/signup',
   '/login',
   '/forgot-password',
   '/reset-password',
@@ -30,10 +33,15 @@ const PUBLIC_IDENTITY_ROUTES = [
 ] as const;
 
 function isPublicRoute(pathname: string): boolean {
+  if (pathname === '/') {
+    return true;
+  }
+
   return PUBLIC_IDENTITY_ROUTES.some(
     (route) =>
-      pathname === route ||
-      pathname.startsWith(`${route}/`),
+      route !== '/' &&
+      (pathname === route ||
+        pathname.startsWith(`${route}/`)),
   );
 }
 
@@ -107,15 +115,14 @@ export default function IdentityBoundary({
 
       setIdentity(null);
 
-      router.replace('/login');
+      router.replace('/');
       router.refresh();
-
     } catch (exception) {
       if (
         exception instanceof IdentityApiError &&
         exception.status === 401
       ) {
-        router.replace('/login');
+        router.replace('/');
         return;
       }
 
@@ -129,18 +136,10 @@ export default function IdentityBoundary({
     }
   }, [router]);
 
-  /*
-   * Authentication pages and email verification remain accessible
-   * without an authenticated session.
-   */
   if (isPublicRoute(pathname)) {
     return <>{children}</>;
   }
 
-  /*
-   * Do not render protected content until the backend verifies
-   * the current session for this route.
-   */
   if (checkedPath !== pathname) {
     return (
       <main className={styles.boundaryLoading}>

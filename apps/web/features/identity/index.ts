@@ -1,3 +1,4 @@
+
 /*
  * Public entry point for the Identity feature.
  *
@@ -12,6 +13,10 @@ export {
 export {
   default as LoginForm,
 } from './components/auth/LoginForm';
+
+export {
+  default as RegistrationForm,
+} from './components/auth/RegistrationForm';
 
 export {
   default as ForgotPasswordForm,

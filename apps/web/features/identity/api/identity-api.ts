@@ -1,9 +1,11 @@
+
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080'
 ).replace(/\/+$/, '');
 
 const IDENTITY_API_ROUTES = {
   csrf: '/api/v1/identity/csrf',
+  registrations: '/api/v1/identity/registrations',
   sessions: '/api/v1/identity/sessions',
   currentIdentity: '/api/v1/identity/me',
   currentSession: '/api/v1/identity/sessions/current',
@@ -26,6 +28,10 @@ export type IdentityUser = {
 type CsrfResponse = {
   token?: string;
   headerName?: string;
+};
+
+type RegistrationResponse = {
+  message?: string;
 };
 
 export class IdentityApiError extends Error {
@@ -122,6 +128,28 @@ async function postJson(
   }
 
   return response;
+}
+
+export async function registerIdentity(
+  displayName: string,
+  email: string,
+  password: string,
+): Promise<string> {
+  const response = await postJson(
+    IDENTITY_API_ROUTES.registrations,
+    {
+      displayName,
+      email,
+      password,
+    },
+  );
+
+  const data = (await response.json()) as RegistrationResponse;
+
+  return (
+    data.message ??
+    'If an account can be created for this address, you will receive an email with the next steps.'
+  );
 }
 
 export async function loginIdentity(
