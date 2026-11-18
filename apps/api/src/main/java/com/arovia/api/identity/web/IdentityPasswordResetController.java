@@ -4,6 +4,7 @@ import com.arovia.api.identity.application.IdentityPasswordResetService;
 import com.arovia.api.identity.application.InvalidPasswordResetTokenException;
 import com.arovia.api.identity.application.PasswordPolicyException;
 import com.arovia.api.identity.application.PasswordResetRateLimitedException;
+import com.arovia.api.security.client.ClientAddressResolver;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -20,11 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentityPasswordResetController {
 
     private final IdentityPasswordResetService passwordResetService;
+    private final ClientAddressResolver clientAddressResolver;
 
     public IdentityPasswordResetController(
-            IdentityPasswordResetService passwordResetService
+            IdentityPasswordResetService passwordResetService,
+            ClientAddressResolver clientAddressResolver
     ) {
         this.passwordResetService = passwordResetService;
+        this.clientAddressResolver = clientAddressResolver;
     }
 
     @PostMapping
@@ -34,7 +38,7 @@ public class IdentityPasswordResetController {
     ) {
         passwordResetService.requestReset(
                 request.email(),
-                servletRequest.getRemoteAddr(),
+                clientAddressResolver.resolve(servletRequest),
                 servletRequest.getHeader("User-Agent")
         );
 
@@ -53,7 +57,7 @@ public class IdentityPasswordResetController {
             passwordResetService.confirmReset(
                     request.token(),
                     request.newPassword(),
-                    servletRequest.getRemoteAddr(),
+                    clientAddressResolver.resolve(servletRequest),
                     servletRequest.getHeader("User-Agent")
             );
 

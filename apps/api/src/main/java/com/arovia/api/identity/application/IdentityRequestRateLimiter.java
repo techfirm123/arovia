@@ -1,11 +1,8 @@
-
 package com.arovia.api.identity.application;
 
-import java.time.Duration;
+import com.arovia.api.identity.application.port.IdentityRateLimitPort;
+import com.arovia.api.identity.configuration.IdentityRateLimitProperties;
 
-import com.arovia.api.identity.infrastructure.IdentityRateLimitStore;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,56 +14,36 @@ public class IdentityRequestRateLimiter {
     private static final String RESEND_IP = "VERIFICATION_RESEND_IP";
     private static final String RESEND_EMAIL = "VERIFICATION_RESEND_EMAIL";
 
-    private final IdentityRateLimitStore rateLimitStore;
-
-    private final Duration registrationWindow;
-    private final int registrationIpLimit;
-    private final int registrationEmailLimit;
-
-    private final Duration resendWindow;
-    private final int resendIpLimit;
-    private final int resendEmailLimit;
+    private final IdentityRateLimitPort rateLimitPort;
+    private final IdentityRateLimitProperties properties;
 
     public IdentityRequestRateLimiter(
-            IdentityRateLimitStore rateLimitStore,
-            @Value("${arovia.rate-limit.registration.window:PT1H}")
-            Duration registrationWindow,
-            @Value("${arovia.rate-limit.registration.ip-limit:10}")
-            int registrationIpLimit,
-            @Value("${arovia.rate-limit.registration.email-limit:3}")
-            int registrationEmailLimit,
-            @Value("${arovia.rate-limit.resend.window:PT1H}")
-            Duration resendWindow,
-            @Value("${arovia.rate-limit.resend.ip-limit:20}")
-            int resendIpLimit,
-            @Value("${arovia.rate-limit.resend.email-limit:5}")
-            int resendEmailLimit
+            IdentityRateLimitPort rateLimitPort,
+            IdentityRateLimitProperties properties
     ) {
-        this.rateLimitStore = rateLimitStore;
-        this.registrationWindow = registrationWindow;
-        this.registrationIpLimit = registrationIpLimit;
-        this.registrationEmailLimit = registrationEmailLimit;
-        this.resendWindow = resendWindow;
-        this.resendIpLimit = resendIpLimit;
-        this.resendEmailLimit = resendEmailLimit;
+        this.rateLimitPort = rateLimitPort;
+        this.properties = properties;
     }
 
     public boolean allowRegistration(
             String sourceIp,
             String normalizedEmail
     ) {
-        boolean ipAllowed = rateLimitStore.consume(
+        IdentityRateLimitProperties.RateLimitPolicy policy =
+                properties.getRegistration();
+
+        boolean ipAllowed = rateLimitPort.consume(
                 REGISTRATION_IP,
                 sourceIp,
-                registrationWindow,
-                registrationIpLimit
+                policy.getWindow(),
+                policy.getIpLimit()
         );
 
-        boolean emailAllowed = rateLimitStore.consume(
+        boolean emailAllowed = rateLimitPort.consume(
                 REGISTRATION_EMAIL,
                 normalizedEmail,
-                registrationWindow,
-                registrationEmailLimit
+                policy.getWindow(),
+                policy.getEmailLimit()
         );
 
         return ipAllowed && emailAllowed;
@@ -76,18 +53,21 @@ public class IdentityRequestRateLimiter {
             String sourceIp,
             String normalizedEmail
     ) {
-        boolean ipAllowed = rateLimitStore.consume(
+        IdentityRateLimitProperties.RateLimitPolicy policy =
+                properties.getResend();
+
+        boolean ipAllowed = rateLimitPort.consume(
                 RESEND_IP,
                 sourceIp,
-                resendWindow,
-                resendIpLimit
+                policy.getWindow(),
+                policy.getIpLimit()
         );
 
-        boolean emailAllowed = rateLimitStore.consume(
+        boolean emailAllowed = rateLimitPort.consume(
                 RESEND_EMAIL,
                 normalizedEmail,
-                resendWindow,
-                resendEmailLimit
+                policy.getWindow(),
+                policy.getEmailLimit()
         );
 
         return ipAllowed && emailAllowed;

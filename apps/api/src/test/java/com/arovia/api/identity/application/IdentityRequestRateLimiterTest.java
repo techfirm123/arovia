@@ -1,4 +1,3 @@
-
 package com.arovia.api.identity.application;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -8,7 +7,8 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 
-import com.arovia.api.identity.infrastructure.IdentityRateLimitStore;
+import com.arovia.api.identity.application.port.IdentityRateLimitPort;
+import com.arovia.api.identity.configuration.IdentityRateLimitProperties;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,18 +22,18 @@ class IdentityRequestRateLimiterTest {
     private static final Duration ONE_HOUR = Duration.ofHours(1);
 
     @Mock
-    private IdentityRateLimitStore rateLimitStore;
+    private IdentityRateLimitPort rateLimitPort;
 
     @Test
     void allowsRegistrationWhenBothLimitsAllowRequest() {
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_IP",
                 "127.0.0.1",
                 ONE_HOUR,
                 10
         )).thenReturn(true);
 
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_EMAIL",
                 "user@example.com",
                 ONE_HOUR,
@@ -52,14 +52,14 @@ class IdentityRequestRateLimiterTest {
 
     @Test
     void blocksRegistrationWhenIpLimitIsExceeded() {
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_IP",
                 "127.0.0.1",
                 ONE_HOUR,
                 10
         )).thenReturn(false);
 
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_EMAIL",
                 "user@example.com",
                 ONE_HOUR,
@@ -78,14 +78,14 @@ class IdentityRequestRateLimiterTest {
 
     @Test
     void blocksRegistrationWhenEmailLimitIsExceeded() {
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_IP",
                 "127.0.0.1",
                 ONE_HOUR,
                 10
         )).thenReturn(true);
 
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "REGISTRATION_EMAIL",
                 "user@example.com",
                 ONE_HOUR,
@@ -104,14 +104,14 @@ class IdentityRequestRateLimiterTest {
 
     @Test
     void appliesSeparateResendLimits() {
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "VERIFICATION_RESEND_IP",
                 "127.0.0.1",
                 ONE_HOUR,
                 20
         )).thenReturn(true);
 
-        when(rateLimitStore.consume(
+        when(rateLimitPort.consume(
                 "VERIFICATION_RESEND_EMAIL",
                 "user@example.com",
                 ONE_HOUR,
@@ -127,14 +127,14 @@ class IdentityRequestRateLimiterTest {
                 )
         );
 
-        verify(rateLimitStore).consume(
+        verify(rateLimitPort).consume(
                 "VERIFICATION_RESEND_IP",
                 "127.0.0.1",
                 ONE_HOUR,
                 20
         );
 
-        verify(rateLimitStore).consume(
+        verify(rateLimitPort).consume(
                 "VERIFICATION_RESEND_EMAIL",
                 "user@example.com",
                 ONE_HOUR,
@@ -143,14 +143,12 @@ class IdentityRequestRateLimiterTest {
     }
 
     private IdentityRequestRateLimiter createLimiter() {
+        IdentityRateLimitProperties properties =
+                new IdentityRateLimitProperties();
+
         return new IdentityRequestRateLimiter(
-                rateLimitStore,
-                ONE_HOUR,
-                10,
-                3,
-                ONE_HOUR,
-                20,
-                5
+                rateLimitPort,
+                properties
         );
     }
 }

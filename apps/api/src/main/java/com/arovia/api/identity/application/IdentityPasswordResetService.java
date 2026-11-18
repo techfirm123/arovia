@@ -1,17 +1,18 @@
 package com.arovia.api.identity.application;
 
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.arovia.api.identity.infrastructure.IdentityPasswordResetStore;
-import com.arovia.api.identity.infrastructure.VerificationTokenGenerator;
-import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
-import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
-import com.arovia.api.notifications.infrastructure.OutboxPayloadCipher;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort;
+import com.arovia.api.identity.application.port.VerificationTokenProvider;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort.AccountResetTarget;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort.PasswordResetTarget;
+import com.arovia.api.notifications.api.EmailNotificationRequest;
+import com.arovia.api.notifications.api.EmailNotificationType;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,35 +21,29 @@ import org.springframework.stereotype.Service;
 @Service
 public class IdentityPasswordResetService {
 
-    private static final String PASSWORD_RESET_EVENT_TYPE =
-            "USER_PASSWORD_RESET_REQUESTED";
-
-    private final IdentityPasswordResetStore resetStore;
+    private final IdentityPasswordResetPort resetPort;
     private final IdentityPasswordResetRateLimiter rateLimiter;
     private final PasswordPolicy passwordPolicy;
     private final PasswordEncoder passwordEncoder;
-    private final VerificationTokenGenerator tokenGenerator;
-    private final OutboxPayloadCipher outboxPayloadCipher;
+    private final VerificationTokenProvider tokenProvider;
     private final Clock clock;
     private final Duration tokenTtl;
 
     public IdentityPasswordResetService(
-            IdentityPasswordResetStore resetStore,
+            IdentityPasswordResetPort resetPort,
             IdentityPasswordResetRateLimiter rateLimiter,
             PasswordPolicy passwordPolicy,
             PasswordEncoder passwordEncoder,
-            VerificationTokenGenerator tokenGenerator,
-            OutboxPayloadCipher outboxPayloadCipher,
+            VerificationTokenProvider tokenProvider,
             Clock applicationClock,
             @Value("${arovia.identity.password-reset-ttl:PT30M}")
             Duration tokenTtl
     ) {
-        this.resetStore = resetStore;
+        this.resetPort = resetPort;
         this.rateLimiter = rateLimiter;
         this.passwordPolicy = passwordPolicy;
         this.passwordEncoder = passwordEncoder;
-        this.tokenGenerator = tokenGenerator;
-        this.outboxPayloadCipher = outboxPayloadCipher;
+        this.tokenProvider = tokenProvider;
         this.clock = applicationClock;
         this.tokenTtl = tokenTtl;
     }
@@ -73,8 +68,8 @@ public class IdentityPasswordResetService {
             return;
         }
 
-        Optional<IdentityPasswordResetStore.AccountResetTarget> account =
-                resetStore.findEligibleAccount(normalizedEmail);
+        Optional<AccountResetTarget> account =
+                resetPort.findEligibleAccount(normalizedEmail);
 
         /*
          * Do not disclose whether the email address belongs to
@@ -84,37 +79,27 @@ public class IdentityPasswordResetService {
             return;
         }
 
-        IdentityPasswordResetStore.AccountResetTarget target =
-                account.get();
+        AccountResetTarget target = account.get();
 
         UUID resetTokenId = UUID.randomUUID();
-        UUID outboxId = UUID.randomUUID();
 
-        String rawToken = tokenGenerator.generateToken();
+        String rawToken = tokenProvider.generateToken();
+        String tokenHash = tokenProvider.hashToken(rawToken);
 
-        String tokenHash = tokenGenerator.hashToken(rawToken);
-
-        PasswordResetEmailPayload emailPayload =
-                new PasswordResetEmailPayload(
+        EmailNotificationRequest notificationRequest =
+                new EmailNotificationRequest(
+                        EmailNotificationType.PASSWORD_RESET,
                         target.email(),
                         target.displayName(),
                         rawToken
                 );
 
-        EncryptedOutboxPayload encryptedPayload =
-                outboxPayloadCipher.encrypt(
-                        outboxId,
-                        PASSWORD_RESET_EVENT_TYPE,
-                        emailPayload
-                );
-
-        resetStore.createPasswordReset(
+        resetPort.createPasswordReset(
                 target.userAccountId(),
                 resetTokenId,
                 tokenHash,
-                Timestamp.from(clock.instant().plus(tokenTtl)),
-                outboxId,
-                encryptedPayload,
+                clock.instant().plus(tokenTtl),
+                notificationRequest,
                 sourceIp,
                 userAgent
         );
@@ -134,10 +119,10 @@ public class IdentityPasswordResetService {
             throw new InvalidPasswordResetTokenException();
         }
 
-        String tokenHash = tokenGenerator.hashToken(rawToken);
+        String tokenHash = tokenProvider.hashToken(rawToken);
 
-        IdentityPasswordResetStore.PasswordResetTarget target =
-                resetStore.findValidResetToken(tokenHash)
+        PasswordResetTarget target =
+                resetPort.findValidResetToken(tokenHash)
                         .orElseThrow(
                                 InvalidPasswordResetTokenException::new
                         );
@@ -151,7 +136,7 @@ public class IdentityPasswordResetService {
         String newPasswordHash =
                 passwordEncoder.encode(normalizedPassword);
 
-        boolean completed = resetStore.completePasswordReset(
+        boolean completed = resetPort.completePasswordReset(
                 tokenHash,
                 newPasswordHash,
                 sourceIp,

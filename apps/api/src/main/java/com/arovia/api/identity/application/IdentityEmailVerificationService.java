@@ -1,23 +1,22 @@
-
 package com.arovia.api.identity.application;
 
-import com.arovia.api.identity.infrastructure.IdentityEmailVerificationStore;
-import com.arovia.api.identity.infrastructure.VerificationTokenGenerator;
+import com.arovia.api.identity.application.port.IdentityEmailVerificationPort;
+import com.arovia.api.identity.application.port.VerificationTokenProvider;
 
 import org.springframework.stereotype.Service;
 
 @Service
 public class IdentityEmailVerificationService {
 
-    private final IdentityEmailVerificationStore verificationStore;
-    private final VerificationTokenGenerator tokenGenerator;
+    private final IdentityEmailVerificationPort verificationPort;
+    private final VerificationTokenProvider tokenProvider;
 
     public IdentityEmailVerificationService(
-            IdentityEmailVerificationStore verificationStore,
-            VerificationTokenGenerator tokenGenerator
+            IdentityEmailVerificationPort verificationPort,
+            VerificationTokenProvider tokenProvider
     ) {
-        this.verificationStore = verificationStore;
-        this.tokenGenerator = tokenGenerator;
+        this.verificationPort = verificationPort;
+        this.tokenProvider = tokenProvider;
     }
 
     public void confirm(
@@ -25,9 +24,9 @@ public class IdentityEmailVerificationService {
             String sourceIp,
             String userAgent
     ) {
-        String tokenHash = tokenGenerator.hashToken(rawToken);
+        String tokenHash = tokenProvider.hashToken(rawToken);
 
-        verificationStore.activateAccount(
+        verificationPort.activateAccount(
                 tokenHash,
                 sourceIp,
                 userAgent

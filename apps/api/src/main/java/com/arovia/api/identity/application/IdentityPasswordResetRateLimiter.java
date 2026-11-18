@@ -1,67 +1,66 @@
 package com.arovia.api.identity.application;
 
-import java.time.Duration;
+import com.arovia.api.identity.application.port.IdentityRateLimitPort;
+import com.arovia.api.identity.configuration.IdentityRateLimitProperties;
 
-import com.arovia.api.identity.infrastructure.IdentityRateLimitStore;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class IdentityPasswordResetRateLimiter {
 
-    private final IdentityRateLimitStore rateLimitStore;
+    private static final String PASSWORD_RESET_IP =
+            "PASSWORD_RESET_IP";
 
-    private final Duration window;
-    private final int ipLimit;
-    private final int emailLimit;
-    private final int confirmationLimit;
+    private static final String PASSWORD_RESET_EMAIL =
+            "PASSWORD_RESET_EMAIL";
+
+    private static final String PASSWORD_RESET_CONFIRM_IP =
+            "PASSWORD_RESET_CONFIRM_IP";
+
+    private final IdentityRateLimitPort rateLimitPort;
+    private final IdentityRateLimitProperties properties;
 
     public IdentityPasswordResetRateLimiter(
-            IdentityRateLimitStore rateLimitStore,
-            @Value("${arovia.rate-limit.password-reset.window:PT1H}")
-            Duration window,
-            @Value("${arovia.rate-limit.password-reset.ip-limit:20}")
-            int ipLimit,
-            @Value("${arovia.rate-limit.password-reset.email-limit:5}")
-            int emailLimit,
-            @Value("${arovia.rate-limit.password-reset.confirmation-limit:10}")
-            int confirmationLimit
+            IdentityRateLimitPort rateLimitPort,
+            IdentityRateLimitProperties properties
     ) {
-        this.rateLimitStore = rateLimitStore;
-        this.window = window;
-        this.ipLimit = ipLimit;
-        this.emailLimit = emailLimit;
-        this.confirmationLimit = confirmationLimit;
+        this.rateLimitPort = rateLimitPort;
+        this.properties = properties;
     }
 
     public boolean allowRequest(
             String sourceIp,
             String normalizedEmail
     ) {
-        boolean ipAllowed = rateLimitStore.consume(
-                "PASSWORD_RESET_IP",
+        IdentityRateLimitProperties.PasswordResetRateLimitPolicy policy =
+                properties.getPasswordReset();
+
+        boolean ipAllowed = rateLimitPort.consume(
+                PASSWORD_RESET_IP,
                 sourceIp,
-                window,
-                ipLimit
+                policy.getWindow(),
+                policy.getIpLimit()
         );
 
-        boolean emailAllowed = rateLimitStore.consume(
-                "PASSWORD_RESET_EMAIL",
+        boolean emailAllowed = rateLimitPort.consume(
+                PASSWORD_RESET_EMAIL,
                 normalizedEmail,
-                window,
-                emailLimit
+                policy.getWindow(),
+                policy.getEmailLimit()
         );
 
         return ipAllowed && emailAllowed;
     }
 
     public boolean allowConfirmation(String sourceIp) {
-        return rateLimitStore.consume(
-                "PASSWORD_RESET_CONFIRM_IP",
+        IdentityRateLimitProperties.PasswordResetRateLimitPolicy policy =
+                properties.getPasswordReset();
+
+        return rateLimitPort.consume(
+                PASSWORD_RESET_CONFIRM_IP,
                 sourceIp,
-                window,
-                confirmationLimit
+                policy.getWindow(),
+                policy.getConfirmationLimit()
         );
     }
 }

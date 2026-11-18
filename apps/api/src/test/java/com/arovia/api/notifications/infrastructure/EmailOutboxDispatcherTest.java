@@ -3,16 +3,24 @@ package com.arovia.api.notifications.infrastructure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.arovia.api.configuration.AroviaProperties;
+import com.arovia.api.configuration.IdentityWorkflowProperties;
+import com.arovia.api.notifications.api.EmailNotificationType;
 import com.arovia.api.notifications.domain.ClaimedOutboxMessage;
+import com.arovia.api.notifications.domain.EmailOutboxErrorCode;
 import com.arovia.api.notifications.domain.EmailVerificationEmailPayload;
 import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
 
@@ -31,7 +39,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 class EmailOutboxDispatcherTest {
 
     private static final String EVENT_TYPE =
-            "USER_EMAIL_VERIFICATION_REQUESTED";
+            EmailNotificationType.EMAIL_VERIFICATION.eventType();
 
     @Mock
     private EmailOutboxStore outboxStore;
@@ -41,6 +49,9 @@ class EmailOutboxDispatcherTest {
 
     @Mock
     private JavaMailSender mailSender;
+
+    @Mock
+    private EmailOutboxObservability observability;
 
     @Test
     void sendsVerificationEmailAndMarksOutboxSent() {
@@ -79,6 +90,7 @@ class EmailOutboxDispatcherTest {
         SimpleMailMessage sentMessage = messageCaptor.getValue();
 
         assertEquals("user@example.com", sentMessage.getTo()[0]);
+
         assertEquals(
                 "Verify your Arovia account",
                 sentMessage.getSubject()
@@ -96,6 +108,12 @@ class EmailOutboxDispatcherTest {
         );
 
         verify(outboxStore).markSent(outboxId);
+
+        verify(observability).recordDispatch(
+                eq(EVENT_TYPE),
+                eq(EmailOutboxObservability.OUTCOME_SENT),
+                any(Duration.class)
+        );
     }
 
     @Test
@@ -132,9 +150,71 @@ class EmailOutboxDispatcherTest {
         dispatcher.dispatchPendingEmails();
 
         verify(outboxStore).scheduleRetry(
-                org.mockito.ArgumentMatchers.eq(outboxId),
+                eq(outboxId),
                 any(),
-                org.mockito.ArgumentMatchers.eq("SMTP_DELIVERY_FAILED")
+                eq(EmailOutboxErrorCode.SMTP_DELIVERY_FAILED.value())
+        );
+
+        verify(observability).recordDispatch(
+                eq(EVENT_TYPE),
+                eq(EmailOutboxObservability.OUTCOME_SMTP_RETRY),
+                any(Duration.class)
+        );
+    }
+
+    @Test
+    void preservesMessageWhenEncryptionKeyVersionIsUnavailable() {
+        UUID outboxId = UUID.randomUUID();
+
+        ClaimedOutboxMessage claimedMessage =
+                new ClaimedOutboxMessage(
+                        outboxId,
+                        EVENT_TYPE,
+                        new byte[]{1, 2, 3},
+                        new byte[12],
+                        "retired-v1",
+                        99
+                );
+
+        when(outboxStore.claimNext())
+                .thenReturn(Optional.of(claimedMessage));
+
+        doThrow(
+                new OutboxEncryptionKeyUnavailableException("retired-v1")
+        ).when(payloadCipher).decrypt(
+                eq(outboxId),
+                eq(EVENT_TYPE),
+                any(EncryptedOutboxPayload.class)
+        );
+
+        EmailOutboxDispatcher dispatcher = createDispatcher();
+
+        dispatcher.dispatchPendingEmails();
+
+        verify(outboxStore).scheduleRetryWithoutConsumingAttempt(
+                eq(outboxId),
+                any(Instant.class),
+                eq(EmailOutboxErrorCode.ENCRYPTION_KEY_UNAVAILABLE.value())
+        );
+
+        verify(outboxStore, never()).markDeadLetter(
+                any(UUID.class),
+                anyString()
+        );
+
+        verify(outboxStore, never()).markSent(any(UUID.class));
+
+        verify(mailSender, never()).send(
+                any(SimpleMailMessage.class)
+        );
+
+        verify(observability).recordDispatch(
+                eq(EVENT_TYPE),
+                eq(
+                        EmailOutboxObservability
+                                .OUTCOME_ENCRYPTION_KEY_UNAVAILABLE
+                ),
+                any(Duration.class)
         );
     }
 
@@ -160,21 +240,39 @@ class EmailOutboxDispatcherTest {
 
         verify(outboxStore).markDeadLetter(
                 outboxId,
-                "UNSUPPORTED_EVENT_TYPE"
+                EmailOutboxErrorCode.UNSUPPORTED_EVENT_TYPE.value()
+        );
+
+        verify(observability).recordDispatch(
+                eq("UNSUPPORTED_EVENT"),
+                eq(EmailOutboxObservability.OUTCOME_UNSUPPORTED_EVENT_TYPE),
+                any(Duration.class)
         );
     }
 
     private EmailOutboxDispatcher createDispatcher() {
+        AroviaProperties aroviaProperties = new AroviaProperties();
+
+        aroviaProperties.getApp()
+                .setWebBaseUrl("http://localhost:3000");
+
+        aroviaProperties.getMail()
+                .setFrom("no-reply@arovia.local");
+
+        aroviaProperties.getOutbox()
+                .setBatchSize(1);
+
+        IdentityWorkflowProperties workflowProperties =
+                new IdentityWorkflowProperties();
+
         return new EmailOutboxDispatcher(
                 outboxStore,
                 payloadCipher,
                 mailSender,
+                observability,
                 Clock.systemUTC(),
-                "http://localhost:3000",
-                "no-reply@arovia.local",
-                Duration.ofHours(24),
-                Duration.ofMinutes(30),
-                1
+                aroviaProperties,
+                workflowProperties
         );
     }
 

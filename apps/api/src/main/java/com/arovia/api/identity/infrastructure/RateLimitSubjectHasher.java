@@ -1,15 +1,15 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.Base64;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.arovia.api.identity.configuration.IdentityRateLimitProperties;
+
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,8 +21,10 @@ public class RateLimitSubjectHasher {
     private final SecretKeySpec secretKey;
 
     public RateLimitSubjectHasher(
-            @Value("${arovia.rate-limit.hmac-key:}") String base64Key
+            IdentityRateLimitProperties properties
     ) {
+        String base64Key = properties.getHmacKey();
+
         if (base64Key == null || base64Key.isBlank()) {
             throw new IllegalStateException(
                     "Arovia rate-limit HMAC key is not configured."

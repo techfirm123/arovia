@@ -2,14 +2,21 @@ package com.arovia.api.notifications.infrastructure;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.arovia.api.configuration.AroviaProperties;
 import com.arovia.api.notifications.domain.EmailVerificationEmailPayload;
 import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
 import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
@@ -17,7 +24,6 @@ import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -26,27 +32,45 @@ public class OutboxPayloadCipher {
     private static final String TRANSFORMATION =
             "AES/GCM/NoPadding";
 
+    private static final String KEY_ALGORITHM = "AES";
+
     private static final int NONCE_LENGTH_BYTES = 12;
+
     private static final int AUTHENTICATION_TAG_BITS = 128;
+
+    private static final int AUTHENTICATION_TAG_LENGTH_BYTES = 16;
+
     private static final int AES_KEY_LENGTH_BYTES = 32;
+
+    private static final Pattern KEY_VERSION_PATTERN =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,79}");
 
     private final JsonMapper jsonMapper;
     private final SecureRandom secureRandom;
-    private final String base64Key;
-    private final String keyVersion;
+
+    private final SecretKeySpec activeSecretKey;
+    private final String activeKeyVersion;
+
+    private final Map<String, SecretKeySpec> keysByVersion;
 
     public OutboxPayloadCipher(
             JsonMapper jsonMapper,
             SecureRandom secureRandom,
-            @Value("${arovia.outbox.encryption.key:}")
-            String base64Key,
-            @Value("${arovia.outbox.encryption.key-version:local-v1}")
-            String keyVersion
+            AroviaProperties properties
     ) {
         this.jsonMapper = jsonMapper;
         this.secureRandom = secureRandom;
-        this.base64Key = base64Key;
-        this.keyVersion = keyVersion;
+
+        AroviaProperties.Outbox.Encryption encryption =
+                properties.getOutbox().getEncryption();
+
+        this.activeKeyVersion = validateKeyVersion(
+                encryption.getKeyVersion()
+        );
+
+        this.keysByVersion = createKeyRing(encryption);
+
+        this.activeSecretKey = keysByVersion.get(activeKeyVersion);
     }
 
     public EncryptedOutboxPayload encrypt(
@@ -80,7 +104,7 @@ public class OutboxPayloadCipher {
 
             cipher.init(
                     Cipher.ENCRYPT_MODE,
-                    new SecretKeySpec(readKey(), "AES"),
+                    activeSecretKey,
                     new GCMParameterSpec(
                             AUTHENTICATION_TAG_BITS,
                             nonce
@@ -96,7 +120,7 @@ public class OutboxPayloadCipher {
             return new EncryptedOutboxPayload(
                     ciphertext,
                     nonce,
-                    keyVersion
+                    activeKeyVersion
             );
 
         } catch (
@@ -141,18 +165,31 @@ public class OutboxPayloadCipher {
             EncryptedOutboxPayload encryptedPayload,
             Class<T> payloadType
     ) {
-        try {
-            if (!keyVersion.equals(encryptedPayload.keyVersion())) {
-                throw new IllegalStateException(
-                        "Outbox encryption key version is not available."
-                );
-            }
+        if (encryptedPayload == null) {
+            throw new IllegalArgumentException(
+                    "Encrypted outbox payload is required."
+            );
+        }
 
+        String requestedKeyVersion = encryptedPayload.keyVersion();
+
+        SecretKeySpec decryptionKey =
+                keysByVersion.get(requestedKeyVersion);
+
+        if (decryptionKey == null) {
+            throw new OutboxEncryptionKeyUnavailableException(
+                    requestedKeyVersion
+            );
+        }
+
+        validateEncryptedPayload(encryptedPayload);
+
+        try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
 
             cipher.init(
                     Cipher.DECRYPT_MODE,
-                    new SecretKeySpec(readKey(), "AES"),
+                    decryptionKey,
                     new GCMParameterSpec(
                             AUTHENTICATION_TAG_BITS,
                             encryptedPayload.nonce()
@@ -182,21 +219,98 @@ public class OutboxPayloadCipher {
         }
     }
 
-    private byte[] readKey() {
+    private Map<String, SecretKeySpec> createKeyRing(
+            AroviaProperties.Outbox.Encryption encryption
+    ) {
+        Map<String, SecretKeySpec> keyRing = new HashMap<>();
+
+        List<byte[]> loadedKeyMaterial = new ArrayList<>();
+
+        byte[] activeKeyBytes = decodeKey(
+                activeKeyVersion,
+                encryption.getKey()
+        );
+
+        keyRing.put(
+                activeKeyVersion,
+                new SecretKeySpec(activeKeyBytes, KEY_ALGORITHM)
+        );
+
+        loadedKeyMaterial.add(activeKeyBytes);
+
+        Map<String, String> additionalKeys =
+                encryption.getAdditionalKeys();
+
+        if (additionalKeys == null) {
+            throw new IllegalStateException(
+                    "Additional outbox encryption keys cannot be null."
+            );
+        }
+
+        for (Map.Entry<String, String> entry
+                : additionalKeys.entrySet()) {
+
+            String version = validateKeyVersion(entry.getKey());
+
+            if (keyRing.containsKey(version)) {
+                throw new IllegalStateException(
+                        "Outbox encryption key versions must be unique."
+                );
+            }
+
+            byte[] keyBytes = decodeKey(
+                    version,
+                    entry.getValue()
+            );
+
+            ensureUniqueKeyMaterial(
+                    keyBytes,
+                    loadedKeyMaterial
+            );
+
+            keyRing.put(
+                    version,
+                    new SecretKeySpec(keyBytes, KEY_ALGORITHM)
+            );
+
+            loadedKeyMaterial.add(keyBytes);
+        }
+
+        return Map.copyOf(keyRing);
+    }
+
+    private void ensureUniqueKeyMaterial(
+            byte[] candidate,
+            List<byte[]> loadedKeys
+    ) {
+        for (byte[] existing : loadedKeys) {
+            if (MessageDigest.isEqual(existing, candidate)) {
+                throw new IllegalStateException(
+                        "Arovia outbox encryption keys must use "
+                                + "distinct key material."
+                );
+            }
+        }
+    }
+
+    private byte[] decodeKey(
+            String version,
+            String base64Key
+    ) {
         if (base64Key == null || base64Key.isBlank()) {
             throw new IllegalStateException(
-                    "Arovia outbox encryption key is not configured."
+                    "Arovia outbox encryption key is not configured "
+                            + "for version: " + version
             );
         }
 
         try {
-            byte[] key = Base64.getDecoder().decode(
-                    base64Key.trim()
-            );
+            byte[] key = Base64.getDecoder().decode(base64Key.trim());
 
             if (key.length != AES_KEY_LENGTH_BYTES) {
                 throw new IllegalStateException(
-                        "Arovia outbox encryption key must contain 32 bytes."
+                        "Arovia outbox encryption key must contain "
+                                + "32 bytes. Version: " + version
                 );
             }
 
@@ -204,8 +318,40 @@ public class OutboxPayloadCipher {
 
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException(
-                    "Arovia outbox encryption key must be valid Base64.",
+                    "Arovia outbox encryption key must be valid "
+                            + "Base64. Version: " + version,
                     exception
+            );
+        }
+    }
+
+    private String validateKeyVersion(String version) {
+        if (version == null
+                || !KEY_VERSION_PATTERN.matcher(version).matches()) {
+            throw new IllegalStateException(
+                    "Arovia outbox encryption key version is invalid."
+            );
+        }
+
+        return version;
+    }
+
+    private void validateEncryptedPayload(
+            EncryptedOutboxPayload encryptedPayload
+    ) {
+        byte[] nonce = encryptedPayload.nonce();
+        byte[] ciphertext = encryptedPayload.ciphertext();
+
+        if (nonce == null || nonce.length != NONCE_LENGTH_BYTES) {
+            throw new IllegalStateException(
+                    "Outbox encryption nonce must contain 12 bytes."
+            );
+        }
+
+        if (ciphertext == null
+                || ciphertext.length < AUTHENTICATION_TAG_LENGTH_BYTES) {
+            throw new IllegalStateException(
+                    "Outbox encrypted payload is invalid."
             );
         }
     }

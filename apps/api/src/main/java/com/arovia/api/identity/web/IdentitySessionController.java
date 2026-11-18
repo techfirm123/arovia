@@ -4,10 +4,12 @@ import java.text.Normalizer;
 import java.time.Clock;
 import java.util.Locale;
 
+import com.arovia.api.identity.application.IdentityAuthenticatedUser;
 import com.arovia.api.identity.application.IdentityLoginRateLimiter;
-import com.arovia.api.identity.infrastructure.AbsoluteSessionLifetimeFilter;
-import com.arovia.api.identity.infrastructure.IdentityAuthenticationAuditStore;
-import com.arovia.api.identity.infrastructure.IdentityUserPrincipal;
+import com.arovia.api.identity.application.port.IdentityAuthenticationAuditPort;
+import com.arovia.api.identity.domain.IdentityAuditEventType;
+import com.arovia.api.security.client.ClientAddressResolver;
+import com.arovia.api.security.session.SecuritySessionAttributes;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -44,29 +46,34 @@ public class IdentitySessionController {
     private static final String LOGIN_THROTTLED_MESSAGE =
             "Unable to sign in at this time. Please try again later.";
 
+    private static final String USER_AGENT_HEADER = "User-Agent";
+
     private final AuthenticationManager authenticationManager;
     private final IdentityLoginRateLimiter loginRateLimiter;
-    private final IdentityAuthenticationAuditStore auditStore;
+    private final IdentityAuthenticationAuditPort auditPort;
     private final SecurityContextRepository securityContextRepository;
     private final CsrfTokenRepository csrfTokenRepository;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final ClientAddressResolver clientAddressResolver;
     private final Clock clock;
 
     public IdentitySessionController(
             AuthenticationManager authenticationManager,
             IdentityLoginRateLimiter loginRateLimiter,
-            IdentityAuthenticationAuditStore auditStore,
+            IdentityAuthenticationAuditPort auditPort,
             SecurityContextRepository securityContextRepository,
             CsrfTokenRepository csrfTokenRepository,
             SessionAuthenticationStrategy sessionAuthenticationStrategy,
+            ClientAddressResolver clientAddressResolver,
             Clock applicationClock
     ) {
         this.authenticationManager = authenticationManager;
         this.loginRateLimiter = loginRateLimiter;
-        this.auditStore = auditStore;
+        this.auditPort = auditPort;
         this.securityContextRepository = securityContextRepository;
         this.csrfTokenRepository = csrfTokenRepository;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+        this.clientAddressResolver = clientAddressResolver;
         this.clock = applicationClock;
     }
 
@@ -80,16 +87,16 @@ public class IdentitySessionController {
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
-        String sourceIp = servletRequest.getRemoteAddr();
-        String userAgent = servletRequest.getHeader("User-Agent");
+        String sourceIp = clientAddressResolver.resolve(servletRequest);
+        String userAgent = servletRequest.getHeader(USER_AGENT_HEADER);
 
         if (!loginRateLimiter.allowLogin(
                 sourceIp,
                 normalizedEmail
         )) {
-            auditStore.record(
+            auditPort.record(
                     null,
-                    "USER_LOGIN_RATE_LIMITED",
+                    IdentityAuditEventType.USER_LOGIN_RATE_LIMITED,
                     sourceIp,
                     userAgent
             );
@@ -116,7 +123,7 @@ public class IdentitySessionController {
                     );
 
             if (!(authentication.getPrincipal()
-                    instanceof IdentityUserPrincipal principal)) {
+                    instanceof IdentityAuthenticatedUser principal)) {
                 throw new AuthenticationServiceException(
                         "Unexpected authentication principal type."
                 );
@@ -147,7 +154,7 @@ public class IdentitySessionController {
             }
 
             session.setAttribute(
-                    AbsoluteSessionLifetimeFilter.AUTHENTICATED_AT_ATTRIBUTE,
+                    SecuritySessionAttributes.AUTHENTICATED_AT,
                     clock.millis()
             );
 
@@ -161,9 +168,9 @@ public class IdentitySessionController {
                     servletResponse
             );
 
-            auditStore.record(
+            auditPort.record(
                     principal.getUserAccountId(),
-                    "USER_LOGIN_SUCCEEDED",
+                    IdentityAuditEventType.USER_LOGIN_SUCCEEDED,
                     sourceIp,
                     userAgent
             );
@@ -198,9 +205,9 @@ public class IdentitySessionController {
              * Do not reveal whether the account is unknown, has an
              * incorrect password, is unverified, suspended or disabled.
              */
-            auditStore.record(
+            auditPort.record(
                     null,
-                    "USER_LOGIN_FAILED",
+                    IdentityAuditEventType.USER_LOGIN_FAILED,
                     sourceIp,
                     userAgent
             );
@@ -215,22 +222,22 @@ public class IdentitySessionController {
 
     @GetMapping("/me")
     public ResponseEntity<IdentityUserResponse> currentIdentity(
-            @AuthenticationPrincipal IdentityUserPrincipal principal
+            @AuthenticationPrincipal IdentityAuthenticatedUser principal
     ) {
         return ResponseEntity.ok(toUserResponse(principal));
     }
 
     @DeleteMapping("/sessions/current")
     public ResponseEntity<Void> logout(
-            @AuthenticationPrincipal IdentityUserPrincipal principal,
+            @AuthenticationPrincipal IdentityAuthenticatedUser principal,
             HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
-        auditStore.record(
+        auditPort.record(
                 principal.getUserAccountId(),
-                "USER_LOGOUT_SUCCEEDED",
-                servletRequest.getRemoteAddr(),
-                servletRequest.getHeader("User-Agent")
+                IdentityAuditEventType.USER_LOGOUT_SUCCEEDED,
+                clientAddressResolver.resolve(servletRequest),
+                servletRequest.getHeader(USER_AGENT_HEADER)
         );
 
         csrfTokenRepository.saveToken(
@@ -260,7 +267,7 @@ public class IdentitySessionController {
     }
 
     private IdentityUserResponse toUserResponse(
-            IdentityUserPrincipal principal
+            IdentityAuthenticatedUser principal
     ) {
         return new IdentityUserResponse(
                 principal.getUserAccountId(),

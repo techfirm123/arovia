@@ -1,8 +1,8 @@
 # Arovia — Development Handoff
 
-**Current milestone:** AROVIA-002A.2 — Authentication, Sessions & Account Recovery  
-**Status:** Complete — backend and frontend validation passed; manual authentication and password-recovery checks passed locally. Not merged to `develop`/`main` and not deployed.  
-**Last updated:** 16 November 2026
+**Current milestone:** AROVIA-002A.2 — Authentication, Sessions & Account Recovery; application/infrastructure boundary hardening complete  
+**Status:** Identity and Notifications refactoring slices reported passing by the developer. Earlier authentication and frontend validation remains as recorded below. Merge/deployment status has not been updated.  
+**Last updated:** 18 November 2026
 
 ## Product direction
 
@@ -106,6 +106,31 @@ The machine also has global Gradle 9.9.1 installed, but the repository wrapper i
 - Password recovery must not reveal account existence; reset tokens are single-use, time-limited, stored as hashes and delivered through the encrypted outbox.
 - Password changes revoke existing sessions so previously authenticated browsers must authenticate again.
 
+## 2026-11-18 — Application / Infrastructure Boundary Refactoring
+
+**Status:** Complete for the five refactoring slices listed below. The developer reported that focused tests, the full backend test suite and `integrationTest` passed after each slice. These commands were run locally by the developer and were not independently re-executed while updating this handoff.
+
+**Purpose:** Make application use cases depend on application-owned ports rather than concrete JDBC, token-generation or encryption implementations. Keep persistence, encryption and transactional behavior in infrastructure adapters. This is an internal dependency-direction refactor; no API or database migration changes were intended.
+
+**Completed slices:**
+
+1. **Registration persistence port** — introduced `IdentityRegistrationPort`; `IdentityRegistrationService` depends on the application contract while the JDBC registration store implements it. The registration transaction continues to coordinate account creation, verification token persistence, notification outbox insertion and audit recording.
+2. **Token provider port** — introduced `VerificationTokenProvider`; registration, email verification, resend and password-reset use cases depend on the provider rather than the concrete token generator.
+3. **Email verification persistence ports** — introduced `IdentityEmailVerificationPort` and `IdentityEmailVerificationResendPort`; the verification and resend JDBC stores implement the contracts. Existing token locking, account activation, cooldown, token rotation, notification superseding and audit behavior were retained.
+4. **Password-reset persistence port** — introduced `IdentityPasswordResetPort`; the password-reset application service depends on it. The JDBC adapter retains reset-token validation/consumption, password update, outstanding-token revocation, Spring Session deletion and audit persistence within the transaction.
+5. **Rate-limit persistence port** — introduced `IdentityRateLimitPort`; login, registration/resend and password-reset rate limiters depend on the application contract while the JDBC adapter retains atomic bucket updates and subject hashing.
+6. **Notifications application ports** — introduced `EmailOutboxPersistencePort` and `OutboxPayloadEncryptionPort`, with infrastructure adapters for `EmailOutboxStore` and `OutboxPayloadCipher`. `NotificationOutboxService` depends on these ports. The mandatory-existing-transaction contract for enqueue/supersede remains. The dispatcher remains infrastructure-owned and was not refactored in this slice.
+
+**Architecture test:** Added a rule prohibiting Notifications application classes from depending on Notifications infrastructure. Existing module-boundary rules remain in place.
+
+**Data/API impact:** No Flyway migration, endpoint, request/response contract or intended data-model change.
+
+**Validation reported by developer:** Focused tests for each changed application service, `./gradlew test`, and `./gradlew integrationTest` all passed after the respective slices. The exact commands and results were confirmed in the development conversation on 18 November 2026.
+
+**Files:** New ports under `apps/api/src/main/java/com/arovia/api/identity/application/port/` and `apps/api/src/main/java/com/arovia/api/notifications/application/port/`; JDBC adapters and application services under their existing module packages; related service tests and `PlatformArchitectureTest` updated.
+
+**Remaining review before AROVIA-002B:** Reinspect the current working tree for any remaining outward dependencies, especially web-layer references to Identity infrastructure and cross-module configuration ownership. The uploaded source archive used during the review predates these refactoring slices, so it is not authoritative evidence of the current post-refactor imports. Do not infer that the remaining items are still present without checking the current branch.
+
 ## Validation status
 
 The following results were reported by the developer as passing on 16 November 2026. These commands were run locally by the developer; they were not independently re-executed while preparing this handoff.
@@ -180,3 +205,27 @@ The reset email is sent from the configured local Mailpit/SMTP environment. Prod
 Design and implement organization/workspace creation as a separate complete vertical slice. Define the onboarding flow, business profile, organization lifecycle, owner membership and the relationship between global user identity and organization membership. Do not treat successful identity registration as automatic organization provisioning unless the approved onboarding workflow explicitly requires it.
 
 After provisioning, implement AROVIA-002C tenant authorization and isolation. The backend must establish and enforce the active organization context and verify membership/permissions on every tenant-scoped operation before customer, product, inventory, purchasing, sales, billing, finance or service data is introduced.
+
+## 2026-11-18 — Final Identity Web-Boundary Cleanup
+
+**Status:** Complete — the developer reported the focused principal/architecture tests, full backend test suite and integration tests passed after this cleanup. Tests were not independently executed during handoff preparation.
+
+**Purpose:** Remove the remaining Identity web-layer dependencies on concrete infrastructure implementations while preserving the existing Spring Security integration and session behavior.
+
+**Completed changes:**
+- Added the application-facing `IdentityAuthenticatedUser` contract. `IdentityUserPrincipal` implements the contract while remaining the Spring Security `UserDetails`/`CredentialsContainer` implementation.
+- Added `IdentityAuthenticationAuditPort`; `IdentityAuthenticationAuditStore` implements the port.
+- Updated `IdentitySessionController` to consume the authenticated-user contract and audit port instead of concrete Identity infrastructure classes.
+- Added an ArchUnit rule prohibiting Identity web classes from depending on Identity infrastructure.
+
+**Behavior intended to remain unchanged:** AuthenticationManager flow, session fixation protection, server-side session persistence, CSRF token rotation, security-context persistence, logout invalidation and authentication audit event semantics. No Flyway migration or API contract change was intended.
+
+**Validation reported by developer:** Focused `IdentityUserPrincipalTest` and `PlatformArchitectureTest`, full `./gradlew test`, and `./gradlew integrationTest` all passed.
+
+**Milestone conclusion:** AROVIA-002A identity registration, authentication and recovery foundations are complete, and the application/infrastructure and web/infrastructure dependency-boundary cleanup is reported passing. No merge or deployment status is inferred.
+
+## Next milestone — AROVIA-002B Organization / Business Workspace Provisioning
+
+Proceed with the organization provisioning vertical slice defined in `docs/AROVIA-002_IDENTITY_AND_ORGANIZATION_DESIGN.md`. A verified, active global user must be able to create an organization. Organization, general organization profile, industry-specific business profile (if included in the agreed first setup contract), initial location when provided, active owner membership, owner-role assignment and organization-created audit event must be created atomically. The backend derives the owner from the authenticated session; it must never accept an arbitrary owner user ID from the browser.
+
+The Organization is the canonical tenant boundary; Workspace is its user-facing representation. UserAccount remains global and must not acquire an `organization_id`. Multiple organization memberships must be supported by the schema. Tenant context authorization and cross-tenant enforcement remain the subsequent AROVIA-002C milestone. Billing/subscription provisioning is outside the AROVIA-002B scope described in the design baseline.

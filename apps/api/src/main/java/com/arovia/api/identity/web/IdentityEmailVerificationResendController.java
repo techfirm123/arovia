@@ -1,7 +1,7 @@
-
 package com.arovia.api.identity.web;
 
 import com.arovia.api.identity.application.IdentityEmailVerificationResendService;
+import com.arovia.api.security.client.ClientAddressResolver;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -18,11 +18,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentityEmailVerificationResendController {
 
     private final IdentityEmailVerificationResendService resendService;
+    private final ClientAddressResolver clientAddressResolver;
 
     public IdentityEmailVerificationResendController(
-            IdentityEmailVerificationResendService resendService
+            IdentityEmailVerificationResendService resendService,
+            ClientAddressResolver clientAddressResolver
     ) {
         this.resendService = resendService;
+        this.clientAddressResolver = clientAddressResolver;
     }
 
     @PostMapping("/resend")
@@ -32,7 +35,7 @@ public class IdentityEmailVerificationResendController {
     ) {
         resendService.resend(
                 request.email(),
-                servletRequest.getRemoteAddr(),
+                clientAddressResolver.resolve(servletRequest),
                 servletRequest.getHeader("User-Agent")
         );
 

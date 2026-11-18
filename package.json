@@ -9,6 +9,7 @@
     "dev:web": "pnpm --filter @arovia/web dev",
     "build:web": "pnpm --filter @arovia/web build",
     "lint:web": "pnpm --filter @arovia/web lint",
-    "typecheck:web": "pnpm --filter @arovia/web typecheck"
+    "typecheck:web": "pnpm --filter @arovia/web typecheck",
+    "check:architecture:web": "pnpm --filter @arovia/web architecture"
   }
 }

@@ -1,0 +1,80 @@
+server:
+  forward-headers-strategy: none
+
+spring:
+  datasource:
+    url: ${AROVIA_DB_URL}
+    username: ${AROVIA_DB_USERNAME}
+    password: ${AROVIA_DB_PASSWORD}
+
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+management:
+  endpoints:
+    access:
+      default: none
+    web:
+      exposure:
+        include: health
+
+  endpoint:
+    health:
+      access: read-only
+      probes:
+        enabled: true
+      show-details: never
+      show-components: never
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        name: arovia-api
+        environment: production
+
+arovia:
+  app:
+    web-base-url: ${AROVIA_WEB_BASE_URL}
+
+  web:
+    allowed-origin: ${AROVIA_WEB_ORIGIN}
+
+  mail:
+    from: ${AROVIA_MAIL_FROM}
+
+  security:
+    client-address:
+      trusted-proxies: ${AROVIA_TRUSTED_PROXY_CIDRS:}
+
+    session:
+      secure-cookie: true
+
+  rate-limit:
+    hmac-key: ${AROVIA_RATE_LIMIT_HMAC_KEY}
+
+  outbox:
+    observability:
+      refresh-interval-ms: ${AROVIA_OUTBOX_OBSERVABILITY_REFRESH_INTERVAL_MS:30000}
+
+    encryption:
+      key: ${AROVIA_OUTBOX_ENCRYPTION_KEY}
+      key-version: ${AROVIA_OUTBOX_ENCRYPTION_KEY_VERSION}
+      additional-keys: ${AROVIA_OUTBOX_ENCRYPTION_ADDITIONAL_KEYS:{}}
