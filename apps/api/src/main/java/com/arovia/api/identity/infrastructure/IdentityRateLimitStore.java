@@ -1,4 +1,3 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.sql.Timestamp;
@@ -6,12 +5,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
+import com.arovia.api.identity.application.port.IdentityRateLimitPort;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class IdentityRateLimitStore {
+public class IdentityRateLimitStore implements IdentityRateLimitPort {
 
     private final JdbcTemplate jdbcTemplate;
     private final RateLimitSubjectHasher subjectHasher;
@@ -27,6 +28,7 @@ public class IdentityRateLimitStore {
         this.clock = applicationClock;
     }
 
+    @Override
     @Transactional
     public boolean consume(
             String action,

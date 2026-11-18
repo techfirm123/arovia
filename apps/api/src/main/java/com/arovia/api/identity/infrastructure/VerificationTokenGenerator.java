@@ -1,4 +1,3 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.nio.charset.StandardCharsets;
@@ -8,10 +7,12 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 
+import com.arovia.api.identity.application.port.VerificationTokenProvider;
+
 import org.springframework.stereotype.Component;
 
 @Component
-public class VerificationTokenGenerator {
+public class VerificationTokenGenerator implements VerificationTokenProvider {
 
     private static final int TOKEN_BYTES = 32;
 
@@ -21,6 +22,7 @@ public class VerificationTokenGenerator {
         this.secureRandom = secureRandom;
     }
 
+    @Override
     public String generateToken() {
         byte[] tokenBytes = new byte[TOKEN_BYTES];
         secureRandom.nextBytes(tokenBytes);
@@ -30,6 +32,7 @@ public class VerificationTokenGenerator {
                 .encodeToString(tokenBytes);
     }
 
+    @Override
     public String hashToken(String rawToken) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

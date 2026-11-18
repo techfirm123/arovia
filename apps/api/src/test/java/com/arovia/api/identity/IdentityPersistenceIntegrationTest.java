@@ -1,4 +1,3 @@
-
 package com.arovia.api.identity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,7 +29,8 @@ import com.arovia.api.identity.infrastructure.IdentityEmailVerificationStore;
 import com.arovia.api.identity.infrastructure.IdentityRateLimitStore;
 import com.arovia.api.identity.infrastructure.IdentityRegistrationStore;
 import com.arovia.api.identity.infrastructure.RateLimitSubjectHasher;
-import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
+import com.arovia.api.notifications.api.EmailNotificationRequest;
+import com.arovia.api.notifications.api.EmailNotificationType;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -50,9 +50,6 @@ import org.springframework.test.context.DynamicPropertySource;
 )
 @Tag("integration")
 class IdentityPersistenceIntegrationTest {
-
-    private static final String VERIFICATION_EVENT_TYPE =
-            "USER_EMAIL_VERIFICATION_REQUESTED";
 
     private static final String INTEGRATION_KEY_VERSION =
             "integration-test-v1";
@@ -250,7 +247,14 @@ class IdentityPersistenceIntegrationTest {
         try {
             for (int index = 0; index < concurrentRequests; index++) {
                 RegistrationData registration =
-                        createRegistrationData(email, validPayload());
+                        createRegistrationData(email);
+
+                EmailNotificationRequest notificationRequest =
+                        verificationNotification(
+                                email,
+                                "Arovia Integration Test",
+                                "verification-token-" + UUID.randomUUID()
+                        );
 
                 futures.add(executor.submit(() -> {
                     ready.countDown();
@@ -263,6 +267,7 @@ class IdentityPersistenceIntegrationTest {
 
                     registrationStore.createPendingAccount(
                             registration,
+                            notificationRequest,
                             "192.0.2.20",
                             "Arovia integration test"
                     );
@@ -318,16 +323,17 @@ class IdentityPersistenceIntegrationTest {
     }
 
     @Test
-    void registrationRollsBackAccountAndTokenWhenOutboxPersistenceFails() {
+    void registrationRollsBackAccountAndTokenWhenOutboxEnqueueFails() {
         String email = "registration-rollback@example.com";
 
-        RegistrationData invalidRegistration =
-                createRegistrationData(email, null);
+        RegistrationData registration =
+                createRegistrationData(email);
 
         assertThrows(
                 NullPointerException.class,
                 () -> registrationStore.createPendingAccount(
-                        invalidRegistration,
+                        registration,
+                        null,
                         "192.0.2.30",
                         "Arovia integration test"
                 )
@@ -384,6 +390,13 @@ class IdentityPersistenceIntegrationTest {
                 EmailVerificationResendData resendData =
                         createResendData();
 
+                EmailNotificationRequest notificationRequest =
+                        verificationNotification(
+                                email,
+                                "there",
+                                "resend-token-" + UUID.randomUUID()
+                        );
+
                 futures.add(executor.submit(() -> {
                     ready.countDown();
 
@@ -396,6 +409,7 @@ class IdentityPersistenceIntegrationTest {
                     return resendStore.resendIfEligible(
                             email,
                             resendData,
+                            notificationRequest,
                             RESEND_COOLDOWN,
                             "192.0.2.40",
                             "Arovia integration test"
@@ -486,14 +500,14 @@ class IdentityPersistenceIntegrationTest {
 
         backdateResendTimestamp(email);
 
-        EmailVerificationResendData invalidResend =
-                createResendDataWithMissingPayload();
+        EmailVerificationResendData resendData = createResendData();
 
         assertThrows(
                 NullPointerException.class,
                 () -> resendStore.resendIfEligible(
                         email,
-                        invalidResend,
+                        resendData,
+                        null,
                         RESEND_COOLDOWN,
                         "192.0.2.50",
                         "Arovia integration test"
@@ -592,7 +606,9 @@ class IdentityPersistenceIntegrationTest {
                         );
 
                         return true;
-                    } catch (InvalidEmailVerificationTokenException exception) {
+                    } catch (
+                            InvalidEmailVerificationTokenException exception
+                    ) {
                         return false;
                     }
                 }));
@@ -720,11 +736,15 @@ class IdentityPersistenceIntegrationTest {
     }
 
     private RegistrationData createPendingAccount(String email) {
-        RegistrationData registration =
-                createRegistrationData(email, validPayload());
+        RegistrationData registration = createRegistrationData(email);
 
         registrationStore.createPendingAccount(
                 registration,
+                verificationNotification(
+                        email,
+                        "Arovia Integration Test",
+                        "integration-verification-token-" + UUID.randomUUID()
+                ),
                 "192.0.2.70",
                 "Arovia integration test"
         );
@@ -732,10 +752,7 @@ class IdentityPersistenceIntegrationTest {
         return registration;
     }
 
-    private RegistrationData createRegistrationData(
-            String email,
-            EncryptedOutboxPayload payload
-    ) {
+    private RegistrationData createRegistrationData(String email) {
         UUID userAccountId = UUID.randomUUID();
 
         return new RegistrationData(
@@ -746,10 +763,7 @@ class IdentityPersistenceIntegrationTest {
                 "Arovia Integration Test",
                 UUID.randomUUID(),
                 hash(UUID.randomUUID().toString()),
-                Instant.now().plus(Duration.ofHours(24)),
-                UUID.randomUUID(),
-                VERIFICATION_EVENT_TYPE,
-                payload
+                Instant.now().plus(Duration.ofHours(24))
         );
     }
 
@@ -757,29 +771,20 @@ class IdentityPersistenceIntegrationTest {
         return new EmailVerificationResendData(
                 UUID.randomUUID(),
                 hash(UUID.randomUUID().toString()),
-                Instant.now().plus(Duration.ofHours(24)),
-                UUID.randomUUID(),
-                VERIFICATION_EVENT_TYPE,
-                validPayload()
+                Instant.now().plus(Duration.ofHours(24))
         );
     }
 
-    private EmailVerificationResendData createResendDataWithMissingPayload() {
-        return new EmailVerificationResendData(
-                UUID.randomUUID(),
-                hash(UUID.randomUUID().toString()),
-                Instant.now().plus(Duration.ofHours(24)),
-                UUID.randomUUID(),
-                VERIFICATION_EVENT_TYPE,
-                null
-        );
-    }
-
-    private EncryptedOutboxPayload validPayload() {
-        return new EncryptedOutboxPayload(
-                new byte[]{1, 2, 3, 4},
-                new byte[12],
-                INTEGRATION_KEY_VERSION
+    private EmailNotificationRequest verificationNotification(
+            String email,
+            String recipientName,
+            String token
+    ) {
+        return new EmailNotificationRequest(
+                EmailNotificationType.EMAIL_VERIFICATION,
+                email,
+                recipientName,
+                token
         );
     }
 

@@ -1,29 +1,38 @@
 package com.arovia.api.identity.infrastructure;
 
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.arovia.api.identity.application.InvalidPasswordResetTokenException;
-import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort.AccountResetTarget;
+import com.arovia.api.identity.application.port.IdentityPasswordResetPort.PasswordResetTarget;
+import com.arovia.api.notifications.api.EmailNotificationRequest;
+import com.arovia.api.notifications.api.NotificationOutbox;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class IdentityPasswordResetStore {
-
-    private static final String PASSWORD_RESET_EVENT_TYPE =
-            "USER_PASSWORD_RESET_REQUESTED";
+public class IdentityPasswordResetStore
+        implements IdentityPasswordResetPort {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NotificationOutbox notificationOutbox;
 
-    public IdentityPasswordResetStore(JdbcTemplate jdbcTemplate) {
+    public IdentityPasswordResetStore(
+            JdbcTemplate jdbcTemplate,
+            NotificationOutbox notificationOutbox
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.notificationOutbox = notificationOutbox;
     }
 
+    @Override
     public Optional<AccountResetTarget> findEligibleAccount(
             String normalizedEmail
     ) {
@@ -52,14 +61,14 @@ public class IdentityPasswordResetStore {
         return accounts.stream().findFirst();
     }
 
+    @Override
     @Transactional
     public boolean createPasswordReset(
             UUID userAccountId,
             UUID resetTokenId,
             String tokenHash,
-            Timestamp expiresAt,
-            UUID outboxId,
-            EncryptedOutboxPayload encryptedPayload,
+            Instant expiresAt,
+            EmailNotificationRequest notificationRequest,
             String sourceIp,
             String userAgent
     ) {
@@ -111,40 +120,16 @@ public class IdentityPasswordResetStore {
                 resetTokenId,
                 userAccountId,
                 tokenHash,
-                expiresAt
+                Timestamp.from(expiresAt)
         );
 
-        jdbcTemplate.update(
-                """
-                INSERT INTO email_outbox (
-                    id,
-                    event_type,
-                    aggregate_type,
-                    aggregate_id,
-                    payload_ciphertext,
-                    payload_nonce,
-                    encryption_key_version,
-                    status,
-                    attempt_count
-                )
-                VALUES (
-                    ?,
-                    ?,
-                    'USER_ACCOUNT',
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    'PENDING',
-                    0
-                )
-                """,
-                outboxId,
-                PASSWORD_RESET_EVENT_TYPE,
+        /*
+         * Notification encryption and outbox persistence participate
+         * in this transaction. A failure rolls back the reset token.
+         */
+        notificationOutbox.enqueue(
                 userAccountId,
-                encryptedPayload.ciphertext(),
-                encryptedPayload.nonce(),
-                encryptedPayload.keyVersion()
+                notificationRequest
         );
 
         recordAuditEvent(
@@ -157,6 +142,7 @@ public class IdentityPasswordResetStore {
         return true;
     }
 
+    @Override
     public Optional<PasswordResetTarget> findValidResetToken(
             String tokenHash
     ) {
@@ -186,6 +172,7 @@ public class IdentityPasswordResetStore {
         return matches.stream().findFirst();
     }
 
+    @Override
     @Transactional
     public boolean completePasswordReset(
             String tokenHash,
@@ -229,7 +216,7 @@ public class IdentityPasswordResetStore {
             return false;
         }
 
-        LockedResetToken token = matches.get(0);
+        LockedResetToken token = matches.getFirst();
 
         /*
          * Consume the token first. Any subsequent failure throws
@@ -341,20 +328,6 @@ public class IdentityPasswordResetStore {
         }
 
         return value.substring(0, maximumLength);
-    }
-
-    public record AccountResetTarget(
-            UUID userAccountId,
-            String email,
-            String normalizedEmail,
-            String displayName
-    ) {
-    }
-
-    public record PasswordResetTarget(
-            UUID userAccountId,
-            String normalizedEmail
-    ) {
     }
 
     private record LockedResetToken(

@@ -1,27 +1,36 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.sql.Timestamp;
 import java.util.UUID;
 
+import com.arovia.api.identity.application.port.IdentityRegistrationPort;
 import com.arovia.api.identity.domain.RegistrationData;
+import com.arovia.api.notifications.api.EmailNotificationRequest;
+import com.arovia.api.notifications.api.NotificationOutbox;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class IdentityRegistrationStore {
+public class IdentityRegistrationStore implements IdentityRegistrationPort {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NotificationOutbox notificationOutbox;
 
-    public IdentityRegistrationStore(JdbcTemplate jdbcTemplate) {
+    public IdentityRegistrationStore(
+            JdbcTemplate jdbcTemplate,
+            NotificationOutbox notificationOutbox
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.notificationOutbox = notificationOutbox;
     }
 
+    @Override
     @Transactional
     public void createPendingAccount(
             RegistrationData registration,
+            EmailNotificationRequest notificationRequest,
             String sourceIp,
             String userAgent
     ) {
@@ -70,27 +79,13 @@ public class IdentityRegistrationStore {
                 Timestamp.from(registration.verificationTokenExpiresAt())
         );
 
-        jdbcTemplate.update(
-                """
-                INSERT INTO email_outbox (
-                    id,
-                    event_type,
-                    aggregate_type,
-                    aggregate_id,
-                    payload_ciphertext,
-                    payload_nonce,
-                    encryption_key_version,
-                    status,
-                    attempt_count
-                )
-                VALUES (?, ?, 'USER_ACCOUNT', ?, ?, ?, ?, 'PENDING', 0)
-                """,
-                registration.outboxId(),
-                registration.outboxEventType(),
+        /*
+         * Notification enqueue joins this transaction. If encryption or
+         * outbox persistence fails, account and token inserts roll back.
+         */
+        notificationOutbox.enqueue(
                 registration.userAccountId(),
-                registration.encryptedOutboxPayload().ciphertext(),
-                registration.encryptedOutboxPayload().nonce(),
-                registration.encryptedOutboxPayload().keyVersion()
+                notificationRequest
         );
 
         jdbcTemplate.update(

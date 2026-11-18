@@ -5,7 +5,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.arovia.api.configuration.AroviaProperties;
+import com.arovia.api.configuration.IdentityWorkflowProperties;
+import com.arovia.api.notifications.api.EmailNotificationType;
 import com.arovia.api.notifications.domain.ClaimedOutboxMessage;
+import com.arovia.api.notifications.domain.EmailOutboxErrorCode;
 import com.arovia.api.notifications.domain.EmailVerificationEmailPayload;
 import com.arovia.api.notifications.domain.EncryptedOutboxPayload;
 import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
@@ -13,7 +17,6 @@ import com.arovia.api.notifications.domain.PasswordResetEmailPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -26,20 +29,10 @@ public class EmailOutboxDispatcher {
     private static final Logger log =
             LoggerFactory.getLogger(EmailOutboxDispatcher.class);
 
-    private static final String VERIFICATION_EVENT_TYPE =
-            "USER_EMAIL_VERIFICATION_REQUESTED";
-
-    private static final String PASSWORD_RESET_EVENT_TYPE =
-            "USER_PASSWORD_RESET_REQUESTED";
-
-    private static final int MAX_ATTEMPTS = 8;
-    private static final long BASE_RETRY_SECONDS = 60;
-    private static final long MAX_RETRY_SECONDS = 3600;
-    private static final long MAX_JITTER_SECONDS = 30;
-
     private final EmailOutboxStore outboxStore;
     private final OutboxPayloadCipher payloadCipher;
     private final JavaMailSender mailSender;
+    private final EmailOutboxObservability observability;
     private final Clock clock;
 
     private final String webBaseUrl;
@@ -49,32 +42,37 @@ public class EmailOutboxDispatcher {
     private final Duration passwordResetTokenTtl;
 
     private final int batchSize;
+    private final AroviaProperties.Outbox.Retry retryPolicy;
 
     public EmailOutboxDispatcher(
             EmailOutboxStore outboxStore,
             OutboxPayloadCipher payloadCipher,
             JavaMailSender mailSender,
+            EmailOutboxObservability observability,
             Clock applicationClock,
-            @Value("${arovia.app.web-base-url}")
-            String webBaseUrl,
-            @Value("${arovia.mail.from}")
-            String fromAddress,
-            @Value("${arovia.identity.email-verification-ttl:PT24H}")
-            Duration verificationTokenTtl,
-            @Value("${arovia.identity.password-reset-ttl:PT30M}")
-            Duration passwordResetTokenTtl,
-            @Value("${arovia.outbox.batch-size:10}")
-            int batchSize
+            AroviaProperties aroviaProperties,
+            IdentityWorkflowProperties workflowProperties
     ) {
         this.outboxStore = outboxStore;
         this.payloadCipher = payloadCipher;
         this.mailSender = mailSender;
+        this.observability = observability;
         this.clock = applicationClock;
-        this.webBaseUrl = removeTrailingSlashes(webBaseUrl);
-        this.fromAddress = fromAddress;
-        this.verificationTokenTtl = verificationTokenTtl;
-        this.passwordResetTokenTtl = passwordResetTokenTtl;
-        this.batchSize = Math.max(1, batchSize);
+
+        this.webBaseUrl = removeTrailingSlashes(
+                aroviaProperties.getApp().getWebBaseUrl()
+        );
+
+        this.fromAddress = aroviaProperties.getMail().getFrom();
+
+        this.verificationTokenTtl =
+                workflowProperties.getEmailVerificationTtl();
+
+        this.passwordResetTokenTtl =
+                workflowProperties.getPasswordResetTtl();
+
+        this.batchSize = aroviaProperties.getOutbox().getBatchSize();
+        this.retryPolicy = aroviaProperties.getOutbox().getRetry();
     }
 
     @Scheduled(
@@ -82,7 +80,7 @@ public class EmailOutboxDispatcher {
     )
     public void dispatchPendingEmails() {
         for (int index = 0; index < batchSize; index++) {
-            var claimedMessage = outboxStore.claimNext();
+            var claimedMessage = claimNextMessage();
 
             if (claimedMessage.isEmpty()) {
                 return;
@@ -92,85 +90,186 @@ public class EmailOutboxDispatcher {
         }
     }
 
+    private java.util.Optional<ClaimedOutboxMessage> claimNextMessage() {
+        try {
+            return outboxStore.claimNext();
+
+        } catch (RuntimeException exception) {
+            observability.recordPollFailure();
+
+            log.atError()
+                    .addKeyValue(
+                            "error_type",
+                            exception.getClass().getSimpleName()
+                    )
+                    .log("Unable to claim an email outbox message.");
+
+            throw exception;
+        }
+    }
+
     private void process(ClaimedOutboxMessage message) {
+        long startedAtNanos = System.nanoTime();
+
+        /*
+         * If processing throws unexpectedly, the failure is classified
+         * as internal_error. The processing duration is still recorded.
+         */
+        String outcome = EmailOutboxObservability.OUTCOME_INTERNAL_ERROR;
 
         try {
-            if (VERIFICATION_EVENT_TYPE.equals(message.eventType())) {
+            outcome = processMessage(message);
+
+        } finally {
+            Duration processingDuration = Duration.ofNanos(
+                    Math.max(0L, System.nanoTime() - startedAtNanos)
+            );
+
+            observability.recordDispatch(
+                    message.eventType(),
+                    outcome,
+                    processingDuration
+            );
+        }
+    }
+
+    private String processMessage(ClaimedOutboxMessage message) {
+
+        /*
+         * Unsupported events are rejected before attempting decryption.
+         */
+        if (!isSupportedEventType(message.eventType())) {
+            outboxStore.markDeadLetter(
+                    message.id(),
+                    EmailOutboxErrorCode.UNSUPPORTED_EVENT_TYPE.value()
+            );
+
+            log.atWarn()
+                    .addKeyValue("outbox_id", message.id())
+                    .addKeyValue("event_type", message.eventType())
+                    .addKeyValue(
+                            "outcome",
+                            EmailOutboxObservability
+                                    .OUTCOME_UNSUPPORTED_EVENT_TYPE
+                    )
+                    .log("Unsupported email event moved to dead letter.");
+
+            return EmailOutboxObservability.OUTCOME_UNSUPPORTED_EVENT_TYPE;
+        }
+
+        try {
+            if (EmailNotificationType.EMAIL_VERIFICATION.eventType()
+                    .equals(message.eventType())) {
+
                 sendVerificationEmail(
                         decryptVerificationPayload(message)
                 );
 
-            } else if (
-                    PASSWORD_RESET_EVENT_TYPE.equals(message.eventType())
-            ) {
+            } else {
                 sendPasswordResetEmail(
                         decryptPasswordResetPayload(message)
                 );
-
-            } else {
-                outboxStore.markDeadLetter(
-                        message.id(),
-                        "UNSUPPORTED_EVENT_TYPE"
-                );
-
-                log.warn(
-                        "Unsupported email event moved to dead letter: {}",
-                        message.id()
-                );
-
-                return;
             }
 
         } catch (MailException exception) {
-            handleDeliveryFailure(message, exception);
-            return;
+            return handleDeliveryFailure(message, exception);
+
+        } catch (OutboxEncryptionKeyUnavailableException exception) {
+            outboxStore.scheduleRetryWithoutConsumingAttempt(
+                    message.id(),
+                    clock.instant().plusSeconds(
+                            retryPolicy.getMaxRetryDelaySeconds()
+                    ),
+                    EmailOutboxErrorCode.ENCRYPTION_KEY_UNAVAILABLE.value()
+            );
+
+            log.atError()
+                    .addKeyValue("outbox_id", message.id())
+                    .addKeyValue(
+                            "key_version",
+                            message.encryptionKeyVersion()
+                    )
+                    .addKeyValue(
+                            "outcome",
+                            EmailOutboxObservability
+                                    .OUTCOME_ENCRYPTION_KEY_UNAVAILABLE
+                    )
+                    .log(
+                            "Email outbox message is waiting for its "
+                                    + "encryption key configuration."
+                    );
+
+            return EmailOutboxObservability
+                    .OUTCOME_ENCRYPTION_KEY_UNAVAILABLE;
 
         } catch (RuntimeException exception) {
             outboxStore.markDeadLetter(
                     message.id(),
-                    "PAYLOAD_PROCESSING_FAILED"
+                    EmailOutboxErrorCode.PAYLOAD_PROCESSING_FAILED.value()
             );
 
-            log.error(
-                    "Email outbox message processing failed. "
-                            + "Message moved to dead letter: {}",
-                    message.id()
-            );
+            log.atError()
+                    .addKeyValue("outbox_id", message.id())
+                    .addKeyValue("event_type", message.eventType())
+                    .addKeyValue(
+                            "error_type",
+                            exception.getClass().getSimpleName()
+                    )
+                    .addKeyValue(
+                            "outcome",
+                            EmailOutboxObservability
+                                    .OUTCOME_PAYLOAD_PROCESSING_FAILED
+                    )
+                    .log(
+                            "Email outbox payload processing failed. "
+                                    + "Message moved to dead letter."
+                    );
 
-            return;
+            return EmailOutboxObservability
+                    .OUTCOME_PAYLOAD_PROCESSING_FAILED;
         }
 
+        /*
+         * Mark SENT only after the mail provider accepts the message.
+         */
         outboxStore.markSent(message.id());
 
-        log.info(
-                "Email outbox message delivered successfully: {}",
-                message.id()
-        );
+        log.atInfo()
+                .addKeyValue("outbox_id", message.id())
+                .addKeyValue("event_type", message.eventType())
+                .addKeyValue(
+                        "outcome",
+                        EmailOutboxObservability.OUTCOME_SENT
+                )
+                .log("Email outbox message delivered successfully.");
+
+        return EmailOutboxObservability.OUTCOME_SENT;
+    }
+
+    private boolean isSupportedEventType(String eventType) {
+        return EmailNotificationType.EMAIL_VERIFICATION.eventType()
+                .equals(eventType)
+                || EmailNotificationType.PASSWORD_RESET.eventType()
+                .equals(eventType);
     }
 
     private EmailVerificationEmailPayload decryptVerificationPayload(
             ClaimedOutboxMessage message
     ) {
-        EncryptedOutboxPayload encryptedPayload =
-                toEncryptedPayload(message);
-
         return payloadCipher.decrypt(
                 message.id(),
                 message.eventType(),
-                encryptedPayload
+                toEncryptedPayload(message)
         );
     }
 
     private PasswordResetEmailPayload decryptPasswordResetPayload(
             ClaimedOutboxMessage message
     ) {
-        EncryptedOutboxPayload encryptedPayload =
-                toEncryptedPayload(message);
-
         return payloadCipher.decryptPasswordReset(
                 message.id(),
                 message.eventType(),
-                encryptedPayload
+                toEncryptedPayload(message)
         );
     }
 
@@ -277,25 +376,36 @@ public class EmailOutboxDispatcher {
                 + remainingMinutes + " minutes";
     }
 
-    private void handleDeliveryFailure(
+    private String handleDeliveryFailure(
             ClaimedOutboxMessage message,
             MailException exception
     ) {
-        String errorCode = "SMTP_DELIVERY_FAILED";
+        EmailOutboxErrorCode errorCode =
+                EmailOutboxErrorCode.SMTP_DELIVERY_FAILED;
 
-        if (message.attemptCount() >= MAX_ATTEMPTS) {
+        if (message.attemptCount() >= retryPolicy.getMaxAttempts()) {
             outboxStore.markDeadLetter(
                     message.id(),
-                    errorCode
+                    errorCode.value()
             );
 
-            log.error(
-                    "Email delivery attempts exhausted. "
-                            + "Message moved to dead letter: {}",
-                    message.id()
-            );
+            log.atError()
+                    .addKeyValue("outbox_id", message.id())
+                    .addKeyValue("attempt", message.attemptCount())
+                    .addKeyValue(
+                            "error_type",
+                            exception.getClass().getSimpleName()
+                    )
+                    .addKeyValue(
+                            "outcome",
+                            EmailOutboxObservability.OUTCOME_SMTP_DEAD_LETTER
+                    )
+                    .log(
+                            "Email delivery attempts exhausted. "
+                                    + "Message moved to dead letter."
+                    );
 
-            return;
+            return EmailOutboxObservability.OUTCOME_SMTP_DEAD_LETTER;
         }
 
         Instant nextAttemptAt = clock.instant().plusSeconds(
@@ -305,16 +415,23 @@ public class EmailOutboxDispatcher {
         outboxStore.scheduleRetry(
                 message.id(),
                 nextAttemptAt,
-                errorCode
+                errorCode.value()
         );
 
-        log.warn(
-                "Email delivery failed; retry scheduled. "
-                        + "outboxId={}, attempt={}, errorType={}",
-                message.id(),
-                message.attemptCount(),
-                exception.getClass().getSimpleName()
-        );
+        log.atWarn()
+                .addKeyValue("outbox_id", message.id())
+                .addKeyValue("attempt", message.attemptCount())
+                .addKeyValue(
+                        "error_type",
+                        exception.getClass().getSimpleName()
+                )
+                .addKeyValue(
+                        "outcome",
+                        EmailOutboxObservability.OUTCOME_SMTP_RETRY
+                )
+                .log("Email delivery failed. Retry scheduled.");
+
+        return EmailOutboxObservability.OUTCOME_SMTP_RETRY;
     }
 
     private long calculateRetryDelaySeconds(int attemptCount) {
@@ -323,16 +440,31 @@ public class EmailOutboxDispatcher {
                 10
         );
 
-        long exponentialDelay =
-                BASE_RETRY_SECONDS * (1L << exponent);
+        long boundedDelay =
+                retryPolicy.getBaseRetryDelaySeconds();
 
-        long boundedDelay = Math.min(
-                exponentialDelay,
-                MAX_RETRY_SECONDS
-        );
+        long maximumDelay =
+                retryPolicy.getMaxRetryDelaySeconds();
 
-        long jitter = ThreadLocalRandom.current().nextLong(
-                MAX_JITTER_SECONDS + 1
+        for (int index = 0; index < exponent; index++) {
+            if (boundedDelay >= maximumDelay
+                    || boundedDelay > maximumDelay / 2) {
+                boundedDelay = maximumDelay;
+                break;
+            }
+
+            boundedDelay = Math.min(
+                    boundedDelay * 2,
+                    maximumDelay
+            );
+        }
+
+        long maximumJitter = retryPolicy.getMaxJitterSeconds();
+
+        long jitter = maximumJitter == 0
+                ? 0
+                : ThreadLocalRandom.current().nextLong(
+                maximumJitter + 1
         );
 
         return boundedDelay + jitter;

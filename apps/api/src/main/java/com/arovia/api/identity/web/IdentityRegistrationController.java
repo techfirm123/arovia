@@ -1,7 +1,7 @@
-
 package com.arovia.api.identity.web;
 
 import com.arovia.api.identity.application.IdentityRegistrationService;
+import com.arovia.api.security.client.ClientAddressResolver;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -18,11 +18,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentityRegistrationController {
 
     private final IdentityRegistrationService registrationService;
+    private final ClientAddressResolver clientAddressResolver;
 
     public IdentityRegistrationController(
-            IdentityRegistrationService registrationService
+            IdentityRegistrationService registrationService,
+            ClientAddressResolver clientAddressResolver
     ) {
         this.registrationService = registrationService;
+        this.clientAddressResolver = clientAddressResolver;
     }
 
     @PostMapping("/registrations")
@@ -34,7 +37,7 @@ public class IdentityRegistrationController {
                 request.displayName(),
                 request.email(),
                 request.password(),
-                servletRequest.getRemoteAddr(),
+                clientAddressResolver.resolve(servletRequest),
                 servletRequest.getHeader("User-Agent")
         );
 

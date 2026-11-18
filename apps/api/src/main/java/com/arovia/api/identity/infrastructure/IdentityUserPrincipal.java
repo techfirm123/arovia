@@ -6,13 +6,18 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import com.arovia.api.identity.application.IdentityAuthenticatedUser;
+
 import org.springframework.security.core.CredentialsContainer;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 public final class IdentityUserPrincipal
-        implements UserDetails, CredentialsContainer, Serializable {
+        implements UserDetails,
+        CredentialsContainer,
+        IdentityAuthenticatedUser,
+        Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -49,10 +54,12 @@ public final class IdentityUserPrincipal
         this.emailVerified = emailVerified;
     }
 
+    @Override
     public UUID getUserAccountId() {
         return userAccountId;
     }
 
+    @Override
     public String getEmail() {
         return email;
     }
@@ -61,10 +68,12 @@ public final class IdentityUserPrincipal
         return normalizedEmail;
     }
 
+    @Override
     public String getDisplayName() {
         return displayName;
     }
 
+    @Override
     public boolean isEmailVerified() {
         return emailVerified;
     }

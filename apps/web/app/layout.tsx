@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 
 import './globals.css';
 
-import IdentityBoundary from '@/components/auth/IdentityBoundary';
+import { IdentityBoundary } from '@/features/identity';
 
 export const metadata: Metadata = {
   title: {

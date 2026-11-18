@@ -24,6 +24,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // Micrometer application metrics
+    implementation 'io.micrometer:micrometer-core'
+
     // PostgreSQL persistence and schema migrations
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -43,9 +46,13 @@ dependencies {
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
 
+    // Unit and integration testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.security:spring-security-test'
+
+    // Architecture rules
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
 
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

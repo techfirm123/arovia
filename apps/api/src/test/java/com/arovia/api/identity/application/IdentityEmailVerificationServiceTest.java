@@ -1,11 +1,11 @@
-
 package com.arovia.api.identity.application;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
-import com.arovia.api.identity.infrastructure.IdentityEmailVerificationStore;
-import com.arovia.api.identity.infrastructure.VerificationTokenGenerator;
+import com.arovia.api.identity.application.port.IdentityEmailVerificationPort;
+import com.arovia.api.identity.application.port.VerificationTokenProvider;
 
 import org.junit.jupiter.api.Test;
 
@@ -14,20 +14,24 @@ import org.mockito.Mockito;
 class IdentityEmailVerificationServiceTest {
 
     @Test
-    void hashesSubmittedTokenBeforeCallingStore() {
-        IdentityEmailVerificationStore store =
-                Mockito.mock(IdentityEmailVerificationStore.class);
+    void hashesSubmittedTokenBeforeCallingPort() {
+        IdentityEmailVerificationPort verificationPort =
+                Mockito.mock(IdentityEmailVerificationPort.class);
 
-        IdentityEmailVerificationService service =
-                new IdentityEmailVerificationService(
-                        store,
-                        new VerificationTokenGenerator(
-                                new java.security.SecureRandom()
-                        )
-                );
+        VerificationTokenProvider tokenProvider =
+                Mockito.mock(VerificationTokenProvider.class);
 
         String rawToken =
                 "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+
+        when(tokenProvider.hashToken(rawToken))
+                .thenReturn("expected-token-hash");
+
+        IdentityEmailVerificationService service =
+                new IdentityEmailVerificationService(
+                        verificationPort,
+                        tokenProvider
+                );
 
         service.confirm(
                 rawToken,
@@ -35,17 +39,17 @@ class IdentityEmailVerificationServiceTest {
                 "Arovia test client"
         );
 
-        String expectedHash =
-                new VerificationTokenGenerator(
-                        new java.security.SecureRandom()
-                ).hashToken(rawToken);
+        verify(tokenProvider).hashToken(rawToken);
 
-        verify(store).activateAccount(
-                expectedHash,
+        verify(verificationPort).activateAccount(
+                "expected-token-hash",
                 "127.0.0.1",
                 "Arovia test client"
         );
 
-        verifyNoMoreInteractions(store);
+        verifyNoMoreInteractions(
+                tokenProvider,
+                verificationPort
+        );
     }
 }

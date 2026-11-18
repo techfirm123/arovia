@@ -1,7 +1,7 @@
-
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import VerifyEmailClient from './verify-email-client';
+
+import { VerifyEmailClient } from '@/features/identity';
 
 export const metadata: Metadata = {
   title: 'Verify your email',

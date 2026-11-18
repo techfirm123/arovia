@@ -47,19 +47,35 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+
+  # Arovia resolves forwarded client addresses itself.
+  # Do not let the servlet container rewrite getRemoteAddr().
+  forward-headers-strategy: none
+
   servlet:
     session:
       timeout: ${AROVIA_SESSION_IDLE_TIMEOUT:30m}
 
 management:
   endpoints:
+    access:
+      default: none
     web:
       exposure:
-        include: health,info
+        include: health
+
   endpoint:
     health:
+      access: read-only
       probes:
         enabled: true
+      show-details: never
+      show-components: never
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
 
 arovia:
   app:
@@ -74,13 +90,14 @@ arovia:
   identity:
     email-verification-ttl: ${AROVIA_EMAIL_VERIFICATION_TTL:PT24H}
     email-verification-resend-cooldown: ${AROVIA_EMAIL_VERIFICATION_RESEND_COOLDOWN:PT1M}
+    password-reset-ttl: ${AROVIA_PASSWORD_RESET_TTL:PT30M}
+
+  security:
+    client-address:
+      trusted-proxies: []
 
     session:
-      # Use true in production behind HTTPS.
       secure-cookie: ${AROVIA_SESSION_COOKIE_SECURE:false}
-
-      # Maximum lifetime after successful authentication,
-      # independent of the idle timeout.
       absolute-timeout: ${AROVIA_SESSION_ABSOLUTE_TIMEOUT:PT12H}
 
   rate-limit:
@@ -102,15 +119,26 @@ arovia:
       ip-limit: ${AROVIA_LOGIN_IP_LIMIT:60}
       email-limit: ${AROVIA_LOGIN_EMAIL_LIMIT:10}
 
+    password-reset:
+      window: ${AROVIA_PASSWORD_RESET_RATE_WINDOW:PT1H}
+      ip-limit: ${AROVIA_PASSWORD_RESET_IP_LIMIT:20}
+      email-limit: ${AROVIA_PASSWORD_RESET_EMAIL_LIMIT:5}
+      confirmation-limit: ${AROVIA_PASSWORD_RESET_CONFIRMATION_LIMIT:10}
+
   outbox:
     poll-interval-ms: ${AROVIA_OUTBOX_POLL_INTERVAL_MS:5000}
     batch-size: ${AROVIA_OUTBOX_BATCH_SIZE:10}
+
+    observability:
+      refresh-interval-ms: ${AROVIA_OUTBOX_OBSERVABILITY_REFRESH_INTERVAL_MS:30000}
+
     encryption:
       key: ${AROVIA_OUTBOX_ENCRYPTION_KEY:}
       key-version: ${AROVIA_OUTBOX_ENCRYPTION_KEY_VERSION:local-v1}
+      additional-keys: {}
 
-info:
-  app:
-    name: Arovia API
-    description: Composable business operating platform
-    version: 0.1.0-SNAPSHOT
+    retry:
+      max-attempts: ${AROVIA_OUTBOX_MAX_ATTEMPTS:8}
+      base-retry-delay-seconds: ${AROVIA_OUTBOX_BASE_RETRY_DELAY_SECONDS:60}
+      max-retry-delay-seconds: ${AROVIA_OUTBOX_MAX_RETRY_DELAY_SECONDS:3600}
+      max-jitter-seconds: ${AROVIA_OUTBOX_MAX_JITTER_SECONDS:30}

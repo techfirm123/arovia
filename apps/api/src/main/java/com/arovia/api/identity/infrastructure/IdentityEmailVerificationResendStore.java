@@ -1,4 +1,3 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.sql.Timestamp;
@@ -7,36 +6,43 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+import com.arovia.api.identity.application.port.IdentityEmailVerificationResendPort;
 import com.arovia.api.identity.domain.EmailVerificationResendData;
+import com.arovia.api.notifications.api.EmailNotificationRequest;
+import com.arovia.api.notifications.api.EmailNotificationType;
+import com.arovia.api.notifications.api.NotificationOutbox;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class IdentityEmailVerificationResendStore {
-
-    private static final String VERIFICATION_EVENT_TYPE =
-            "USER_EMAIL_VERIFICATION_REQUESTED";
+public class IdentityEmailVerificationResendStore
+        implements IdentityEmailVerificationResendPort {
 
     private static final String PENDING_STATUS =
             "PENDING_EMAIL_VERIFICATION";
 
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
+    private final NotificationOutbox notificationOutbox;
 
     public IdentityEmailVerificationResendStore(
             JdbcTemplate jdbcTemplate,
-            Clock applicationClock
+            Clock applicationClock,
+            NotificationOutbox notificationOutbox
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.clock = applicationClock;
+        this.notificationOutbox = notificationOutbox;
     }
 
+    @Override
     @Transactional
     public boolean resendIfEligible(
             String normalizedEmail,
             EmailVerificationResendData resendData,
+            EmailNotificationRequest notificationRequest,
             Duration resendCooldown,
             String sourceIp,
             String userAgent
@@ -104,31 +110,17 @@ public class IdentityEmailVerificationResendStore {
         }
 
         /*
-         * Supersede previously queued but not yet claimed
-         * verification messages. A PROCESSING message cannot be
-         * safely cancelled after an SMTP worker has claimed it.
+         * Supersede previously queued but not yet claimed verification
+         * messages. Processing messages cannot safely be cancelled.
          */
-        jdbcTemplate.update(
-                """
-                UPDATE email_outbox
-                SET
-                    status = 'DEAD_LETTER',
-                    payload_ciphertext = NULL,
-                    payload_nonce = NULL,
-                    locked_until = NULL,
-                    last_error_code = 'SUPERSEDED_BY_RESEND'
-                WHERE aggregate_type = 'USER_ACCOUNT'
-                  AND aggregate_id = ?
-                  AND event_type = ?
-                  AND status IN ('PENDING', 'RETRY')
-                """,
-                account.userAccountId(),
-                VERIFICATION_EVENT_TYPE
+        notificationOutbox.supersedePending(
+                EmailNotificationType.EMAIL_VERIFICATION,
+                account.userAccountId()
         );
 
         /*
-         * Revoke every previous unconsumed token, including
-         * expired tokens, before inserting the replacement.
+         * Revoke every previous unconsumed token, including expired
+         * tokens, before inserting the replacement.
          */
         jdbcTemplate.update(
                 """
@@ -154,9 +146,7 @@ public class IdentityEmailVerificationResendStore {
                 resendData.verificationTokenId(),
                 account.userAccountId(),
                 resendData.verificationTokenHash(),
-                Timestamp.from(
-                        resendData.verificationTokenExpiresAt()
-                )
+                Timestamp.from(resendData.verificationTokenExpiresAt())
         );
 
         int updatedAccounts = jdbcTemplate.update(
@@ -180,27 +170,9 @@ public class IdentityEmailVerificationResendStore {
             );
         }
 
-        jdbcTemplate.update(
-                """
-                INSERT INTO email_outbox (
-                    id,
-                    event_type,
-                    aggregate_type,
-                    aggregate_id,
-                    payload_ciphertext,
-                    payload_nonce,
-                    encryption_key_version,
-                    status,
-                    attempt_count
-                )
-                VALUES (?, ?, 'USER_ACCOUNT', ?, ?, ?, ?, 'PENDING', 0)
-                """,
-                resendData.outboxId(),
-                resendData.outboxEventType(),
+        notificationOutbox.enqueue(
                 account.userAccountId(),
-                resendData.encryptedOutboxPayload().ciphertext(),
-                resendData.encryptedOutboxPayload().nonce(),
-                resendData.encryptedOutboxPayload().keyVersion()
+                notificationRequest
         );
 
         jdbcTemplate.update(

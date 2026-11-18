@@ -1,17 +1,19 @@
-
 package com.arovia.api.identity.infrastructure;
 
 import java.util.List;
 import java.util.UUID;
 
 import com.arovia.api.identity.application.InvalidEmailVerificationTokenException;
+import com.arovia.api.identity.application.port.IdentityEmailVerificationPort;
+import com.arovia.api.identity.domain.IdentityAuditEventType;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class IdentityEmailVerificationStore {
+public class IdentityEmailVerificationStore
+        implements IdentityEmailVerificationPort {
 
     private static final String PENDING_STATUS =
             "PENDING_EMAIL_VERIFICATION";
@@ -22,6 +24,7 @@ public class IdentityEmailVerificationStore {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    @Override
     @Transactional
     public void activateAccount(
             String tokenHash,
@@ -108,10 +111,11 @@ public class IdentityEmailVerificationStore {
                     source_ip,
                     user_agent
                 )
-                VALUES (?, ?, 'USER_EMAIL_VERIFIED', ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 UUID.randomUUID(),
                 candidate.userAccountId(),
+                IdentityAuditEventType.USER_EMAIL_VERIFIED.value(),
                 sourceIp,
                 truncate(userAgent, 512)
         );
