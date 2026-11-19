@@ -519,3 +519,147 @@ subsequent AROVIA-002C milestone. Do not introduce tenant-owned
 customer, product, inventory, purchasing, sales, billing, finance or
 service records until tenant authorization and isolation are enforced.
 Billing/subscription provisioning is outside the AROVIA-002B scope.
+
+---------------------------------------------------------------------
+## AROVIA-002B — Organization Provisioning, Workspace and Context Foundation
+
+**Status:** Implementation completed and locally validated  
+**Branch:** `feature/AROVIA-002B-organization-provisioning`  
+**Date:** 19 November 2026
+
+### 1. Objective
+
+Establish the foundation for organizations as Arovia's canonical business tenant boundary, allowing authenticated users to create organizations, manage their organization context and enter a business workspace.
+
+Identity remains global. Organization membership determines access to business resources.
+
+### 2. Backend implementation
+
+Implemented:
+
+- Organization domain model and lifecycle statuses.
+- Organization profile and primary location foundations.
+- Organization membership and membership-role foundations.
+- Support for users belonging to multiple organizations.
+- Organization provisioning application service and persistence adapter.
+- Organization creation API.
+- Organization membership discovery API.
+- Active organization selection and clearing APIs.
+- Server-side session storage of selected organization.
+- Database-backed validation of active membership and organization status.
+
+### 3. Database
+
+Added Flyway migration:
+
+`V4__create_organization_provisioning_foundation.sql`
+
+Tables:
+
+- organization
+- organization_profile
+- organization_location
+- organization_membership
+- organization_membership_role
+- organization_audit_event
+
+No subsequent migration was required for the organization context foundation.
+
+### 4. Tenant context foundation
+
+Added:
+
+- OrganizationContext
+- OrganizationContextResolver
+- OrganizationScoped annotation
+- OrganizationContextInterceptor
+- OrganizationWebConfiguration
+
+The interceptor resolves the selected organization from the authenticated session and validates the user's current active membership before allowing organization-scoped handlers to execute.
+
+The resolved context is attached to the individual HTTP request. It is not stored in a ThreadLocal.
+
+This establishes the request-context foundation. Complete tenant isolation at every business persistence boundary remains part of subsequent validation and business-module implementation.
+
+### 5. Frontend implementation
+
+Implemented:
+
+- Organization API client.
+- Organization selector in the authenticated application workspace.
+- Display of organization name and membership role.
+- Empty-organization state and onboarding navigation.
+- Organization onboarding form.
+- Business profile and regional preference capture.
+- Optional primary business location.
+- Automatic selection of the newly created organization.
+- Session-backed selection restoration after browser refresh.
+
+The dashboard still contains illustrative sample business metrics. These are not persistent business records.
+
+### 6. Browser integration findings
+
+Resolved a CORS integration issue:
+
+The organization selection endpoint uses PUT, but PUT was missing from the configured allowed CORS methods.
+
+Updated the CORS configuration to allow PUT.
+
+Verified:
+
+- Organization creation succeeds.
+- Newly created organization appears in the organization selector.
+- Organization selection succeeds.
+- OWNER membership role is displayed.
+- Browser refresh retains the selected organization.
+- Logout destroys the authenticated session and its selected organization.
+- After a new login, the user can select the organization again.
+
+Remembering the last selected organization across separate login sessions remains a possible future UX improvement, not part of this implementation.
+
+### 7. Validation
+
+Backend:
+- Gradle unit tests passed.
+- PostgreSQL integration tests passed.
+
+Frontend:
+- ESLint passed.
+- TypeScript typecheck passed.
+- Next.js production build passed.
+
+Manual browser verification completed for organization creation, selection and refresh persistence.
+
+### 8. Architectural decisions
+
+- User identity remains global.
+- Organization is the canonical tenant boundary.
+- Users can belong to multiple organizations.
+- Membership roles are organization-specific.
+- Selected organization is stored in the authenticated server-side session.
+- Session selection is not an authorization grant; membership is validated against the database.
+- Business modules must consume trusted organization context rather than trusting organization IDs supplied by clients.
+- Reusable business capabilities must remain independent of industry-specific compositions.
+- No generic multi-tenant framework or unnecessary abstraction is introduced ahead of implementation evidence.
+
+### 9. Next milestone
+
+**AROVIA-003 — Customer Management**
+
+First reusable business capability.
+
+Initial scope:
+- Customer creation.
+- Customer directory and search.
+- Customer details.
+- Customer updates.
+- Customer archival.
+- Organization-scoped persistence and tenant-isolation integration tests.
+
+The Customer Management module will be reusable across industry compositions, including the initial computer sales and service composition.
+
+### 10. Git status
+
+This milestone is ready for a local feature-branch commit after final validation.
+
+No commit, push or merge is implied by this handoff update.

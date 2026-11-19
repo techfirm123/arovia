@@ -33,6 +33,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { OrganizationSwitcher } from '@/features/organization';
+
 type NavigationItem = {
   label: string;
   icon: LucideIcon;
@@ -169,11 +171,7 @@ export default function HomePage() {
           <button className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}><X size={18} /></button>
         </div>
 
-        <button className="workspace-switcher" onClick={() => navigateTo('Overview')}>
-          <div className="workspace-avatar">A</div>
-          <div className="workspace-copy"><strong>Arovia Demo Store</strong><span>Owner workspace</span></div>
-          <ChevronDown size={15} className="muted-icon" />
-        </button>
+        <OrganizationSwitcher />
 
         <nav className="side-navigation" aria-label="Main navigation">
           {filteredNavigation.map((group) => (

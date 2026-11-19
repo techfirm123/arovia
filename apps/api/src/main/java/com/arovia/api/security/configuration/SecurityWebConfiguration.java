@@ -1,3 +1,4 @@
+
 package com.arovia.api.security.configuration;
 
 import java.time.Clock;
@@ -69,6 +70,9 @@ public class SecurityWebConfiguration {
     private static final String IDENTITY_CURRENT_SESSION_ENDPOINT =
             "/api/v1/identity/sessions/current";
 
+    private static final String ORGANIZATION_COLLECTION_ENDPOINT =
+            "/api/v1/organizations";
+
     @Bean
     public SecurityContextRepository securityContextRepository() {
         return new HttpSessionSecurityContextRepository();
@@ -85,11 +89,6 @@ public class SecurityWebConfiguration {
         return repository;
     }
 
-    /*
-     * JSON login is performed by the identity controller rather than by
-     * UsernamePasswordAuthenticationFilter. The controller explicitly
-     * invokes this session authentication strategy.
-     */
     @Bean
     public SessionAuthenticationStrategy sessionAuthenticationStrategy() {
         return new ChangeSessionIdAuthenticationStrategy();
@@ -110,9 +109,6 @@ public class SecurityWebConfiguration {
         );
         serializer.setSameSite("Lax");
 
-        /*
-         * No domain is configured. The session cookie remains host-only.
-         */
         return serializer;
     }
 
@@ -128,10 +124,6 @@ public class SecurityWebConfiguration {
         http
                 .cors(Customizer.withDefaults())
 
-                /*
-                 * CSRF remains enabled for browser state-changing requests,
-                 * including registration, email verification and login.
-                 */
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
                 )
@@ -162,11 +154,6 @@ public class SecurityWebConfiguration {
 
                 .authorizeHttpRequests(authorize -> authorize
 
-                        /*
-                         * Only the two explicitly defined GET probes are
-                         * public. The aggregate health endpoint and any
-                         * future custom health groups are not public.
-                         */
                         .requestMatchers(
                                 HttpMethod.GET,
                                 ACTUATOR_LIVENESS_ENDPOINT,
@@ -198,18 +185,14 @@ public class SecurityWebConfiguration {
                                 IDENTITY_CURRENT_SESSION_ENDPOINT
                         ).authenticated()
 
-                        /*
-                         * New API routes and all other Actuator operations
-                         * must be explicitly authorized.
-                         */
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                ORGANIZATION_COLLECTION_ENDPOINT
+                        ).authenticated()
+                        .requestMatchers("/api/v1/organizations/**").authenticated()
                         .anyRequest().denyAll()
                 );
 
-        /*
-         * Enforce maximum authenticated session age. The filter is added
-         * to Spring Security's chain rather than registered as a second
-         * servlet filter.
-         */
         http.addFilterAfter(
                 new AbsoluteSessionLifetimeFilter(
                         applicationClock,

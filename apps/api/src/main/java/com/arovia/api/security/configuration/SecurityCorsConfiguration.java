@@ -1,3 +1,4 @@
+
 package com.arovia.api.security.configuration;
 
 import java.util.List;
@@ -25,6 +26,7 @@ public class SecurityCorsConfiguration {
                 List.of(
                         "GET",
                         "POST",
+                        "PUT",
                         "DELETE",
                         "OPTIONS"
                 )
