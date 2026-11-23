@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
+import com.arovia.api.testing.PostgresIntegrationTestSupport;
 import com.arovia.api.notifications.domain.EmailOutboxOperationalSnapshot;
 
 import org.junit.jupiter.api.AfterEach;
@@ -36,19 +36,6 @@ class EmailOutboxOperationalSnapshotIntegrationTest {
     private static final String TEST_KEY_VERSION =
             "outbox-snapshot-integration-v1";
 
-    private static final String TEST_ENCRYPTION_KEY =
-            Base64.getEncoder().encodeToString(new byte[32]);
-
-    private static final String TEST_HMAC_KEY =
-            Base64.getEncoder().encodeToString(
-                    new byte[]{
-                            1, 2, 3, 4, 5, 6, 7, 8,
-                            9, 10, 11, 12, 13, 14, 15, 16,
-                            17, 18, 19, 20, 21, 22, 23, 24,
-                            25, 26, 27, 28, 29, 30, 31, 32
-                    }
-            );
-
     private final List<UUID> insertedIds = new ArrayList<>();
 
     @Autowired
@@ -61,38 +48,9 @@ class EmailOutboxOperationalSnapshotIntegrationTest {
     static void registerIntegrationTestProperties(
             DynamicPropertyRegistry registry
     ) {
-        registry.add(
-                "spring.datasource.url",
-                EmailOutboxOperationalSnapshotIntegrationTest::testDatabaseUrl
-        );
-
-        registry.add(
-                "spring.datasource.username",
-                () -> environmentOrDefault(
-                        "AROVIA_TEST_DB_USERNAME",
-                        "arovia_app"
-                )
-        );
-
-        registry.add(
-                "spring.datasource.password",
-                EmailOutboxOperationalSnapshotIntegrationTest
-                        ::testDatabasePassword
-        );
-
-        registry.add(
-                "arovia.outbox.encryption.key",
-                () -> TEST_ENCRYPTION_KEY
-        );
-
-        registry.add(
-                "arovia.outbox.encryption.key-version",
-                () -> TEST_KEY_VERSION
-        );
-
-        registry.add(
-                "arovia.rate-limit.hmac-key",
-                () -> TEST_HMAC_KEY
+        PostgresIntegrationTestSupport.registerProperties(
+                registry,
+                TEST_KEY_VERSION
         );
     }
 
@@ -272,66 +230,5 @@ class EmailOutboxOperationalSnapshotIntegrationTest {
         insertedIds.add(id);
 
         return id;
-    }
-
-    private static String testDatabaseUrl() {
-        String url = requiredEnvironmentVariable("AROVIA_TEST_DB_URL");
-
-        String urlWithoutQuery = url.split("\\?", 2)[0];
-
-        String databaseName = urlWithoutQuery.substring(
-                urlWithoutQuery.lastIndexOf('/') + 1
-        );
-
-        if (!"arovia_test".equals(databaseName)) {
-            throw new IllegalStateException(
-                    "Integration tests may only use the arovia_test "
-                            + "database. Configured database: "
-                            + databaseName
-            );
-        }
-
-        return url;
-    }
-
-    private static String testDatabasePassword() {
-        String password = System.getenv("AROVIA_TEST_DB_PASSWORD");
-
-        if (password == null || password.isBlank()) {
-            password = System.getenv("AROVIA_DB_PASSWORD");
-        }
-
-        if (password == null || password.isBlank()) {
-            throw new IllegalStateException(
-                    "Set AROVIA_TEST_DB_PASSWORD or AROVIA_DB_PASSWORD "
-                            + "for PostgreSQL integration tests."
-            );
-        }
-
-        return password;
-    }
-
-    private static String requiredEnvironmentVariable(String name) {
-        String value = System.getenv(name);
-
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "Required integration-test environment variable "
-                            + name + " is missing."
-            );
-        }
-
-        return value;
-    }
-
-    private static String environmentOrDefault(
-            String name,
-            String defaultValue
-    ) {
-        String value = System.getenv(name);
-
-        return value == null || value.isBlank()
-                ? defaultValue
-                : value;
     }
 }
