@@ -1,8 +1,9 @@
+
 # Arovia — Development Handoff
 
-**Current milestone:** AROVIA-003 — Customer Management  
-**Implementation status:** Complete — local automated validation and manual workflow validation reported passing by the developer.  
-**Git status:** Feature branch is local; GitHub PR and merge are pending.  
+**Current milestone:** AROVIA-QA-002 — Shared PostgreSQL Integration-Test Infrastructure  
+**Implementation status:** Complete locally — backend unit/architecture tests and PostgreSQL integration tests passed, as reported by the developer.  
+**Git status:** AROVIA-003 is present on `develop`; AROVIA-QA-001 is merged via PR #5; AROVIA-QA-002 is implemented and validated on the local feature branch, with GitHub PR/merge pending.  
 **Last updated:** 23 November 2026
 
 ---
@@ -166,7 +167,7 @@ Expected context behavior:
 ### 5.4 Backend — Customer Management
 
 **Milestone:** AROVIA-003  
-**Status:** Implementation and manual acceptance complete locally.
+**Status:** Implementation and manual acceptance complete. Present on `develop`.
 
 Customer Management is the first reusable, industry-neutral business capability.
 
@@ -262,7 +263,77 @@ The creation workflow closes the dialog after successful creation and refreshes 
 
 The archive workflow uses an in-app confirmation dialog rather than the browser's native confirmation prompt.
 
-The user manually verified the customer workflow, including creation, persistence after refresh, editing and archiving.
+The customer workflow was manually verified, including creation, persistence after refresh, editing and archiving.
+
+### 5.8 Quality automation and CI
+
+#### AROVIA-QA-001 — CI workflow
+
+The GitHub Actions workflow is present at:
+
+`.github/workflows/ci.yml`
+
+It was merged to `develop` through PR #5.
+
+The workflow runs for pull requests targeting `develop` and supports manual `workflow_dispatch`.
+
+**Backend verification:**
+
+- Uses Java 21 and the repository Gradle wrapper.
+- Starts a PostgreSQL 18 service with the dedicated `arovia_test` database.
+- Runs `./gradlew --no-daemon clean test`.
+- Runs `./gradlew --no-daemon integrationTest`.
+- Uploads backend test reports as workflow artifacts.
+
+**Frontend verification:**
+
+- Uses Node.js 24 and pnpm 11.22.0.
+- Installs dependencies with `pnpm install --frozen-lockfile`.
+- Runs `pnpm lint:web`.
+- Runs `pnpm typecheck:web`.
+- Runs `pnpm build:web`.
+
+The workflow uses read-only repository permissions and concurrency cancellation for obsolete runs.
+
+PR #5 (`feature/AROVIA-QA-001-testing-foundation` → `develop`) was merged. Both GitHub Actions jobs — Backend verification and Frontend verification — passed.
+
+#### AROVIA-QA-002 — Shared PostgreSQL Integration-Test Infrastructure
+
+**Status:** Implementation and local validation complete. GitHub PR/merge pending.
+
+Implementation branch:
+
+`feature/AROVIA-QA-002-backend-integration-support`
+
+A shared test support class centralizes the PostgreSQL integration-test configuration:
+
+`apps/api/src/test/java/com/arovia/api/testing/PostgresIntegrationTestSupport.java`
+
+It centralizes:
+
+- `AROVIA_TEST_DB_URL` validation, restricting integration tests to the `arovia_test` database.
+- Test database username and password resolution.
+- Test outbox encryption key and key-version configuration.
+- Test rate-limit HMAC key configuration.
+- Disabled scheduling and non-web application test properties.
+
+The following integration-test classes use the shared support class:
+
+- `apps/api/src/test/java/com/arovia/api/identity/IdentityPersistenceIntegrationTest.java`
+- `apps/api/src/test/java/com/arovia/api/organization/OrganizationProvisioningIntegrationTest.java`
+- `apps/api/src/test/java/com/arovia/api/notifications/infrastructure/EmailOutboxOperationalSnapshotIntegrationTest.java`
+
+The refactor preserves the existing test cases, per-suite encryption key versions and cleanup behavior.
+
+The three suites contain 11 integration tests in total:
+
+- 7 Identity integration tests.
+- 3 Organization integration tests.
+- 1 Email Outbox operational snapshot integration test.
+
+The developer confirmed that both local backend validation commands passed after the refactor.
+
+The shared support class and three refactored test classes have not yet been pushed or merged to `develop`.
 
 ## 6. Database migrations
 
@@ -334,16 +405,20 @@ These rules preserve the intended dependency direction as new capabilities are i
 
 ## 9. Validation status
 
-The following results were reported by the developer as passing locally on 23 November 2026. They were not independently re-executed while preparing this handoff.
+The following results were reported by the developer. Local commands were run on 23 November 2026. GitHub Actions results refer to PR #5.
 
 | Area | Command / check | Result |
 |---|---|---|
-| Backend compilation | Gradle compilation | Passed |
-| Backend unit tests | `./gradlew test` | Passed |
-| Backend integration tests | `./gradlew integrationTest` | Passed |
-| Frontend lint | `pnpm lint` | Passed |
-| Frontend typecheck | `pnpm typecheck` | Passed |
-| Frontend production build | `pnpm build` | Passed |
+| Backend unit and architecture tests | `cd apps/api && ./gradlew clean test` | Passed after QA-002 refactor |
+| Backend PostgreSQL integration tests | `cd apps/api && ./gradlew integrationTest` | Passed after QA-002 refactor |
+| Identity integration tests | 7 tests in `IdentityPersistenceIntegrationTest` | Passed |
+| Organization integration tests | 3 tests in `OrganizationProvisioningIntegrationTest` | Passed |
+| Email outbox integration test | 1 test in `EmailOutboxOperationalSnapshotIntegrationTest` | Passed |
+| Frontend lint | `pnpm lint:web` | Passed for AROVIA-003 |
+| Frontend typecheck | `pnpm typecheck:web` | Passed for AROVIA-003 |
+| Frontend production build | `pnpm build:web` | Passed for AROVIA-003 |
+| GitHub Actions — Backend verification | PR #5 | Passed |
+| GitHub Actions — Frontend verification | PR #5 | Passed |
 | Customer creation | Manual workflow | Passed |
 | Customer persistence after refresh | Manual workflow | Passed |
 | Customer directory and details | Manual workflow | Passed |
@@ -351,20 +426,21 @@ The following results were reported by the developer as passing locally on 23 No
 | Customer archiving | Manual workflow | Passed |
 | Archive confirmation UI | Visual/manual validation | Passed |
 
-The manual customer workflow was demonstrated using the local application.
+The developer confirmed that both local backend commands — `./gradlew clean test` and `./gradlew integrationTest` — passed after the QA-002 refactor.
 
-The developer reported that the complete workflow is working.
+The developer also confirmed that both GitHub Actions jobs on PR #5 passed before the PR was merged.
 
-**Important:** Automated frontend component tests have not yet been established. The frontend package currently has no dedicated test runner or Customer test files.
+The customer workflow was manually validated using the local application, including creation, persistence after refresh, editing and archiving.
 
-The existing backend unit and integration test suites passed, but this does not mean every scenario listed in the future testing strategy has already been covered.
+**Coverage boundary:** The shared PostgreSQL support refactors existing integration-test configuration; it does not itself add HTTP-level authorization, CSRF or cross-organization isolation tests. Automated frontend component tests and end-to-end Playwright coverage have not yet been established.
 
 ## 10. Current limitations and follow-ups
 
-- Standardized frontend test infrastructure has not yet been established.
-- Identity and Organization need a consolidated automated test coverage review.
+- Standardized frontend component test infrastructure (for example, Vitest and React Testing Library) has not yet been established.
 - Customer frontend component tests are pending.
-- Security and cross-organization isolation coverage should be reviewed and strengthened.
+- HTTP-level security coverage for authentication, active organization context, CSRF and cross-organization isolation should be reviewed and strengthened.
+- Playwright end-to-end coverage for critical business workflows has not yet been established.
+- Identity, Organization and Customer need a consolidated automated coverage review.
 - Role-based business capability authorization policy has not yet been fully established.
 - Production CORS, cookie security, SMTP delivery, encryption-key provisioning and rotation require deployment-specific validation.
 - No production deployment is implied by local validation.
@@ -379,19 +455,30 @@ Default development branch:
 
 `develop`
 
-Current implementation branch:
+Latest verified `develop` commit:
 
-`feature/AROVIA-003-customer-management`
+`7a363a6d4397b54facaafdb3887439f5b5793619`
 
-Previously merged milestone:
+Commit message:
 
-- AROVIA-002B — Organization Provisioning, Workspace and Context Foundation.
-- PR #4 merged to `develop`.
-- Merge commit: `c09ec3f60ed819860977de61a4d3479aef0c81ae`.
+`Merge pull request #5 from techfirm123/feature/AROVIA-QA-001-testing-foundation`
 
-AROVIA-003 is locally validated but its feature branch has not yet been found on GitHub. No PR or merge is recorded for this milestone.
+### Merged and present on `develop`
 
-The next Git operation is to review the local working tree, commit the Customer Management changes, push the feature branch, create a PR against `develop` and merge after review.
+- AROVIA-002B — Organization Provisioning, Workspace and Context Foundation; PR #4 merged; merge commit `c09ec3f60ed819860977de61a4d3479aef0c81ae`.
+- AROVIA-QA-001 — CI workflow; PR #5 merged; merge commit `7a363a6d4397b54facaafdb3887439f5b5793619`.
+
+### Present on `develop` without a separate PR merge
+
+- AROVIA-003 — Customer Management; commit `feaa69535cef0d32b5a35466b94a2703b8c0e2da` (`feat(customer): implement customer management`).
+
+### Current local implementation branch
+
+`feature/AROVIA-QA-002-backend-integration-support`
+
+AROVIA-QA-002 has been implemented and both local backend validation commands passed. Its shared support class and three refactored integration-test files are not yet present on the verified `develop` branch. No GitHub PR or merge is recorded for QA-002.
+
+No commit, push or merge for QA-002 has been performed as part of this handoff update.
 
 ## 12. Milestone history
 
@@ -427,45 +514,40 @@ Implemented organization creation, organization profiles, membership, owner-role
 
 Implemented the first reusable business capability with customer creation, directory, search, pagination, details, updates and archiving.
 
-Backend compilation, unit tests, integration tests, frontend lint, typecheck, production build and manual workflow validation were reported passing locally.
+Customer Management is present on `develop` in commit `feaa69535cef0d32b5a35466b94a2703b8c0e2da`.
 
-Implementation is complete. GitHub merge remains pending.
+### AROVIA-QA-001 — CI Workflow
+
+Added GitHub Actions pull-request checks for backend and frontend verification.
+
+PR #5 was merged to `develop` in commit `7a363a6d4397b54facaafdb3887439f5b5793619`.
+
+Both CI jobs passed.
+
+### AROVIA-QA-002 — Shared PostgreSQL Integration-Test Infrastructure
+
+Centralized PostgreSQL integration-test configuration and refactored the Identity, Organization and Email Outbox integration-test suites to use it.
+
+The developer reported `./gradlew clean test` and `./gradlew integrationTest` passing after the refactor.
+
+GitHub PR/merge remains pending.
 
 ---
 
-## 13. Next milestone — AROVIA-QA-001: Platform Testing Foundation
+## 13. Next milestone — AROVIA-QA-003: HTTP-Level Security and Tenant-Isolation Coverage
 
-Before introducing the next business capability, establish a consistent testing strategy and reusable test infrastructure for Arovia.
+The next quality slice should strengthen automated tests around the security boundary that protects tenant-owned business capabilities.
 
-The testing foundation should cover four areas:
+Focus areas:
 
-1. Backend testing — JUnit, Spring Boot Test, Mockito and PostgreSQL integration testing.
-2. Frontend testing — Vitest, React Testing Library, jest-dom and realistic user interactions.
-3. Architecture and security testing — module boundaries, authentication, authorization, CSRF and tenant isolation.
-4. End-to-end testing — critical business workflows using Playwright where appropriate.
+1. Verify unauthenticated requests are rejected.
+2. Verify authenticated requests without an active organization context receive the expected context-required response.
+3. Verify authenticated requests with a valid active organization can access their own customer records.
+4. Verify CSRF protection on state-changing browser requests.
+5. Verify users cannot read, update or archive customers belonging to another organization.
+6. Verify stale or revoked organization membership does not retain access.
+7. Keep tests deterministic and use the dedicated PostgreSQL integration-test configuration established in QA-002.
 
-### Proposed workstreams
+This is a proposed next slice based on the current coverage gaps; it is not yet implemented.
 
-| Workstream | Scope |
-|---|---|
-| QA-001A | Testing architecture and conventions |
-| QA-001B | Backend test infrastructure |
-| QA-001C | Frontend test infrastructure |
-| QA-001D | Identity test coverage |
-| QA-001E | Organization test coverage |
-| QA-001F | Customer test coverage |
-| QA-001G | Critical end-to-end workflows and reporting |
-
-### Testing principles
-
-- Use isolated test data.
-- Run PostgreSQL integration tests against a dedicated test database.
-- Do not depend on local development records.
-- Test security behavior at HTTP level.
-- Verify cross-organization isolation explicitly.
-- Keep tests deterministic and independent of execution order.
-- Include automated tests in every future vertical slice.
-
-The test engine is reusable infrastructure. Identity, Organization and Customer are its first platform modules to be brought under a consistent quality baseline.
-
-**Next action:** Complete the AROVIA-003 Git commit and merge before starting AROVIA-QA-001.
+After that, continue with frontend component testing and critical end-to-end workflow coverage. Keep each as a complete, independently validated vertical slice.
