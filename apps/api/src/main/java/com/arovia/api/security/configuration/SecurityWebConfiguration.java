@@ -190,6 +190,7 @@ public class SecurityWebConfiguration {
                                 ORGANIZATION_COLLECTION_ENDPOINT
                         ).authenticated()
                         .requestMatchers("/api/v1/organizations/**").authenticated()
+                        .requestMatchers("/api/v1/customers/**").authenticated()
                         .anyRequest().denyAll()
                 );
 

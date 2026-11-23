@@ -25,7 +25,7 @@ public class OrganizationContextInterceptor
         implements HandlerInterceptor {
 
     public static final String REQUEST_ATTRIBUTE =
-            OrganizationContext.class.getName();
+            "com.arovia.api.organization.application.OrganizationContext";
 
     private static final String ORGANIZATION_SESSION_ATTRIBUTE =
             OrganizationSessionAttributes.ACTIVE_ORGANIZATION_ID;

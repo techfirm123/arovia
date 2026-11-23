@@ -114,4 +114,39 @@ class PlatformArchitectureTest {
                     .matching("com.arovia.api.(*)..")
                     .should()
                     .beFreeOfCycles();
+
+    @ArchTest
+    static final ArchRule customer_domain_must_not_depend_on_outer_layers =
+            noClasses()
+                    .that()
+                    .resideInAPackage("com.arovia.api.customer.domain..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAnyPackage(
+                            "com.arovia.api.customer.application..",
+                            "com.arovia.api.customer.infrastructure..",
+                            "com.arovia.api.customer.web..",
+                            "com.arovia.api.organization.."
+                    );
+
+    @ArchTest
+    static final ArchRule customer_application_must_not_depend_on_web_or_infrastructure =
+            noClasses()
+                    .that()
+                    .resideInAPackage("com.arovia.api.customer.application..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAnyPackage(
+                            "com.arovia.api.customer.web..",
+                            "com.arovia.api.customer.infrastructure.."
+                    );
+
+    @ArchTest
+    static final ArchRule organization_must_not_depend_on_customer =
+            noClasses()
+                    .that()
+                    .resideInAPackage("com.arovia.api.organization..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("com.arovia.api.customer..");
 }

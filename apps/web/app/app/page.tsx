@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 import { OrganizationSwitcher } from '@/features/organization';
+import { useRouter } from 'next/navigation';
 
 type NavigationItem = {
   label: string;
@@ -139,6 +140,7 @@ export default function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const router = useRouter();
 
   const activeItem = useMemo(
     () => [...navigation.flatMap((group) => group.items), settingsNavigationItem].find((item) => item.label === activePage) ?? navigation[0].items[0],
@@ -154,6 +156,13 @@ export default function HomePage() {
   }, [searchQuery]);
 
   function navigateTo(label: string) {
+    if (label === 'Customers') {
+      router.push('/app/customers');
+      setMobileNavOpen(false);
+      setQuickCreateOpen(false);
+      return;
+    }
+
     setActivePage(label);
     setMobileNavOpen(false);
     setQuickCreateOpen(false);
