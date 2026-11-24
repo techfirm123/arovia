@@ -1,3 +1,4 @@
+
 package com.arovia.api.testing;
 
 import java.util.Base64;
@@ -27,9 +28,38 @@ public final class PostgresIntegrationTestSupport {
     private PostgresIntegrationTestSupport() {
     }
 
+    /**
+     * Registers properties for non-web integration tests.
+     */
     public static void registerProperties(
             DynamicPropertyRegistry registry,
             String encryptionKeyVersion
+    ) {
+        registerProperties(
+                registry,
+                encryptionKeyVersion,
+                "none"
+        );
+    }
+
+    /**
+     * Registers properties for HTTP-level integration tests.
+     */
+    public static void registerWebProperties(
+            DynamicPropertyRegistry registry,
+            String encryptionKeyVersion
+    ) {
+        registerProperties(
+                registry,
+                encryptionKeyVersion,
+                "servlet"
+        );
+    }
+
+    private static void registerProperties(
+            DynamicPropertyRegistry registry,
+            String encryptionKeyVersion,
+            String webApplicationType
     ) {
         registry.add(
                 "spring.datasource.url",
@@ -71,7 +101,7 @@ public final class PostgresIntegrationTestSupport {
 
         registry.add(
                 "spring.main.web-application-type",
-                () -> "none"
+                () -> webApplicationType
         );
     }
 
