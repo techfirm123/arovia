@@ -1,4 +1,3 @@
-
 import { spawnSync } from 'node:child_process';
 
 import { request, type APIRequestContext } from '@playwright/test';
@@ -38,18 +37,14 @@ async function getCsrf(
 
   const body = (await response.json()) as CsrfResponse;
 
-  if (!body.token) {
-    throw new Error('The API did not return a CSRF token.');
+  if (!body.token || !body.headerName) {
+    throw new Error('The API did not return a complete CSRF token response.');
   }
 
- if (!body.token || !body.headerName) {
-   throw new Error('The API did not return a complete CSRF token response.');
- }
-
- return {
-   token: body.token,
-   headerName: body.headerName,
- };
+  return {
+    token: body.token,
+    headerName: body.headerName,
+  };
 }
 
 function activateRegisteredAccount(email: string): void {
@@ -61,8 +56,13 @@ function activateRegisteredAccount(email: string): void {
       '-tA',
       '-v',
       `e2e_email=${email}`,
-      '-c',
-      `
+      '-f',
+      '-',
+    ],
+    {
+      encoding: 'utf8',
+      env: process.env,
+      input: `
         UPDATE user_account
         SET
           status = 'ACTIVE',
@@ -71,10 +71,6 @@ function activateRegisteredAccount(email: string): void {
         WHERE normalized_email = :'e2e_email'
         RETURNING id;
       `,
-    ],
-    {
-      encoding: 'utf8',
-      env: process.env,
     },
   );
 
