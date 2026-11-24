@@ -1,8 +1,9 @@
 # Arovia — Development Handoff
 
-**Current milestone:** AROVIA-QA-003 — HTTP-Level Security and Tenant-Isolation Coverage  
-**Implementation status:** Complete locally — all 8 HTTP-level security and tenant-isolation tests passed, as confirmed by the developer.  
-**Git status:** No commit, push, PR or merge for QA-003 has been confirmed.  
+**Current milestone:** AROVIA-QA-005 — End-to-End Testing Foundation  
+**Previous milestone:** AROVIA-QA-004 — Frontend Testing Foundation  
+**Implementation status:** QA-004 complete and merged to `develop` through PR #8.  
+**Current branch:** `feature/AROVIA-QA-005-e2e-testing`  
 **Last updated:** 24 November 2026
 
 ---
@@ -166,7 +167,7 @@ Expected context behavior:
 ### 5.4 Backend — Customer Management
 
 **Milestone:** AROVIA-003  
-**Status:** Implementation and manual acceptance complete. Present on `develop` according to the previous handoff.
+**Status:** Implementation and manual acceptance complete.
 
 Customer Management is the first reusable, industry-neutral business capability.
 
@@ -293,9 +294,9 @@ PR #5 (`feature/AROVIA-QA-001-testing-foundation` → `develop`) was merged. Bot
 
 #### AROVIA-QA-002 — Shared PostgreSQL Integration-Test Infrastructure
 
-**Status:** Implementation and local validation complete, according to the previous handoff. GitHub PR/merge was pending at that point.
+**Status:** Merged to `develop` through PR #6.
 
-Implementation branch recorded previously:
+Implementation branch:
 
 `feature/AROVIA-QA-002-backend-integration-support`
 
@@ -325,16 +326,16 @@ The three suites contain 11 integration tests in total:
 - 3 Organization integration tests.
 - 1 Email Outbox operational snapshot integration test.
 
-The developer previously confirmed that both local backend validation commands passed after the refactor:
+The developer confirmed that both local backend validation commands passed after the refactor:
 
 - `./gradlew clean test`
 - `./gradlew integrationTest`
 
-The GitHub PR/merge status for QA-002 should be verified separately before updating repository milestone status.
-
 #### AROVIA-QA-003 — HTTP-Level Security and Tenant-Isolation Coverage
 
-**Status:** Implementation and local test validation complete. All 8 tests passed, as confirmed by the developer on 24 November 2026.
+**Status:** Merged to `develop` through PR #7.
+
+All 8 HTTP-level security and tenant-isolation tests passed locally.
 
 The objective was to verify the actual HTTP security boundary rather than relying only on manually constructed security contexts or isolated application-level tests.
 
@@ -376,11 +377,70 @@ The tests use the servlet web application configuration and PostgreSQL integrati
 - The project uses Spring Boot 4.1.2, which uses Jackson 3 packages. The test imports must use `tools.jackson.databind` rather than `com.fasterxml.jackson.databind`.
 - No production security weakening or removal of the absolute session lifetime filter was required to resolve the test setup.
 
-**Validation result:**
+The eight tests validate the listed scenarios. They do not establish complete security coverage for every application module or every membership lifecycle scenario.
 
-The developer confirmed that all eight QA-003 tests passed after correcting the test harness and Jackson imports.
+#### AROVIA-QA-004 — Frontend Testing Foundation
 
-The passing result validates the eight scenarios listed above. It does not, by itself, establish complete security coverage for every application module or every membership lifecycle scenario.
+**Status:** Merged to `develop` through PR #8.
+
+Feature branch:
+
+`feature/AROVIA-QA-004-frontend-testing`
+
+Feature commit:
+
+`9100748857a12a147f06d09792f46c317a901c69`
+
+Merge commit:
+
+`0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
+
+PR: https://github.com/techfirm123/arovia/pull/8
+
+**Objective:**
+
+Establish a maintainable frontend component testing foundation and cover the existing Customer Management workspace.
+
+**Testing stack:**
+
+- Vitest
+- React Testing Library
+- jsdom
+
+**Customer workspace coverage:**
+
+12 component tests cover:
+
+- Customer directory loading.
+- Customer directory display.
+- Empty state.
+- Loading error.
+- Creation dialog open and close.
+- Successful customer creation.
+- Creation failure retaining the form.
+- Edit form prepopulation.
+- Successful customer editing.
+- Edit failure retaining changes.
+- Archive success.
+- Archive cancellation.
+- Archive failure retaining confirmation and displaying the error.
+
+**Implementation notes:**
+
+- `CustomersWorkspace.loadCustomers` dependency behavior was corrected by removing `selected` from the dependency list and using functional `setSelected`.
+- The archive failure test uses the specific confirmation button selector `name: /^Archive customer$/`.
+- Next.js-generated `next-env.d.ts` type references were retained.
+
+**Validation confirmed by the developer:**
+
+| Command | Result |
+|---|---|
+| `pnpm --filter @arovia/web typecheck` | Passed |
+| `pnpm --filter @arovia/web test` | Passed — 12 tests |
+| `pnpm --filter @arovia/web lint` | Passed — ESLint and architecture checks |
+| `pnpm --filter @arovia/web build` | Passed |
+
+QA-004 establishes component-level testing. It does not replace browser-level end-to-end testing.
 
 ## 6. Database migrations
 
@@ -439,7 +499,7 @@ The Customer controller is protected by organization context resolution and auth
 
 The security configuration uses explicit endpoint authorization and a deny-by-default fallback.
 
-**QA-003 validation:** The eight HTTP-level tests now provide automated evidence for authentication enforcement, active organization context, CSRF protection and cross-organization customer read/update/archive isolation.
+**QA-003 validation:** Eight HTTP-level tests provide automated evidence for authentication enforcement, active organization context, CSRF protection and cross-organization customer read/update/archive isolation.
 
 The tests verify that cross-organization operations return 404 and do not modify the original customer data.
 
@@ -466,9 +526,10 @@ The following results have been reported by the developer.
 | Organization integration tests | 3 tests | Passed |
 | Email outbox integration test | 1 test | Passed |
 | QA-003 HTTP security tests | 8 scenarios | Passed |
-| Frontend lint | `pnpm lint:web` | Passed for AROVIA-003 |
-| Frontend typecheck | `pnpm typecheck:web` | Passed for AROVIA-003 |
-| Frontend production build | `pnpm build:web` | Passed for AROVIA-003 |
+| QA-004 frontend component tests | `pnpm --filter @arovia/web test` | Passed — 12 tests |
+| QA-004 frontend typecheck | `pnpm --filter @arovia/web typecheck` | Passed |
+| QA-004 frontend lint and architecture | `pnpm --filter @arovia/web lint` | Passed |
+| QA-004 frontend production build | `pnpm --filter @arovia/web build` | Passed |
 | GitHub Actions — Backend verification | PR #5 | Passed |
 | GitHub Actions — Frontend verification | PR #5 | Passed |
 | Customer creation | Manual workflow | Passed |
@@ -478,17 +539,16 @@ The following results have been reported by the developer.
 | Customer archiving | Manual workflow | Passed |
 | Archive confirmation UI | Visual/manual validation | Passed |
 
-**QA-003 coverage boundary:**
+**Coverage boundaries:**
 
-The eight tests validate the listed HTTP security and tenant-isolation scenarios. They do not establish complete security coverage for all modules, roles, permissions, organization membership lifecycle transitions or frontend end-to-end workflows.
-
-Automated frontend component tests and Playwright end-to-end coverage have not yet been established.
+- QA-003 validates the eight listed HTTP security and tenant-isolation scenarios.
+- QA-004 validates the listed Customer Management frontend component behaviors.
+- Neither milestone establishes complete application-wide security or browser end-to-end coverage.
+- QA-005 is intended to establish browser-level coverage for the critical workflows.
 
 ## 10. Current limitations and follow-ups
 
-- Standardized frontend component test infrastructure (for example, Vitest and React Testing Library) has not yet been established.
-- Customer frontend component tests are pending.
-- Playwright end-to-end coverage for critical business workflows has not yet been established.
+- Playwright end-to-end coverage for critical business workflows is pending.
 - Identity, Organization and Customer need a consolidated automated coverage review.
 - Role-based business capability authorization policy has not yet been fully established.
 - Revoked/stale membership behavior should receive dedicated HTTP-level regression coverage.
@@ -501,36 +561,45 @@ Repository:
 
 `https://github.com/techfirm123/arovia`
 
-Default development branch:
+Development branch:
 
 `develop`
 
-Latest verified `develop` commit recorded in the previous handoff:
+Latest verified `develop` commit:
 
-`7a363a6d4397b54facaafdb3887439f5b5793619`
+`0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
 
 Commit message:
 
-`Merge pull request #5 from techfirm123/feature/AROVIA-QA-001-testing-foundation`
+`Merge pull request #8 from techfirm123/feature/AROVIA-QA-004-frontend-testing`
 
-### Previously recorded as merged and present on `develop`
+### Merged milestones
 
-- AROVIA-002B — Organization Provisioning, Workspace and Context Foundation; PR #4 merged; merge commit `c09ec3f60ed819860977de61a4d3479aef0c81ae`.
-- AROVIA-QA-001 — CI workflow; PR #5 merged; merge commit `7a363a6d4397b54facaafdb3887439f5b5793619`.
+| Milestone | PR | Status |
+|---|---:|---|
+| AROVIA-002B — Organization Provisioning | #4 | Merged |
+| AROVIA-QA-001 — CI workflow | #5 | Merged |
+| AROVIA-QA-002 — PostgreSQL integration-test infrastructure | #6 | Merged |
+| AROVIA-QA-003 — HTTP security and tenant isolation | #7 | Merged |
+| AROVIA-QA-004 — Frontend testing foundation | #8 | Merged |
 
-### Previously recorded as present on `develop`
+Other implementation milestones:
 
-- AROVIA-003 — Customer Management; commit `feaa69535cef0d32b5a35466b94a2703b8c0e2da` (`feat(customer): implement customer management`).
+- AROVIA-003 — Customer Management; commit `feaa69535cef0d32b5a35466b94a2703b8c0e2da`.
 
-### QA-002 and QA-003 Git status
+### QA-004 merge details
 
-The previous handoff recorded QA-002 as locally implemented and validated, with PR/merge pending.
+- Feature commit: `9100748857a12a147f06d09792f46c317a901c69`
+- Merge commit: `0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
+- PR #8: https://github.com/techfirm123/arovia/pull/8
 
-QA-003 has now been locally validated, with all eight tests passing.
+### Current QA-005 working branch
 
-**Git status for both QA-002 and QA-003 must be checked before claiming that either milestone is committed, pushed or merged.**
+`feature/AROVIA-QA-005-e2e-testing`
 
-No commit, push or merge is recorded as part of this handoff update.
+The local branch was created from the latest verified `develop` commit above.
+
+The handoff update is a local working-tree change and must be committed by the developer after reviewing and saving this document.
 
 ## 12. Milestone history
 
@@ -570,7 +639,7 @@ Implemented the first reusable business capability with customer creation, direc
 
 Added GitHub Actions pull-request checks for backend and frontend verification.
 
-PR #5 was merged to `develop` in commit `7a363a6d4397b54facaafdb3887439f5b5793619`.
+PR #5 was merged to `develop`.
 
 Both CI jobs passed.
 
@@ -578,54 +647,101 @@ Both CI jobs passed.
 
 Centralized PostgreSQL integration-test configuration and refactored the Identity, Organization and Email Outbox integration-test suites to use it.
 
+PR #6 was merged to `develop`.
+
 The developer reported `./gradlew clean test` and `./gradlew integrationTest` passing after the refactor.
 
 ### AROVIA-QA-003 — HTTP-Level Security and Tenant-Isolation Coverage
 
-Implemented HTTP-level integration tests covering:
+Implemented HTTP-level integration tests covering authentication, active organization context, CSRF enforcement and cross-organization customer isolation.
 
-- Unauthenticated access.
-- Missing active organization context.
-- Authenticated access with an active organization.
-- CSRF enforcement.
-- Successful customer creation with a valid CSRF token.
-- Cross-organization customer reads.
-- Cross-organization customer updates.
-- Cross-organization customer archiving.
+All eight tests passed locally.
 
-All eight tests passed locally, as confirmed by the developer on 24 November 2026.
+PR #7 was merged to `develop`.
 
-The test harness exercises the real identity login, CSRF and active organization selection endpoints, preserving the server-side session between requests.
+### AROVIA-QA-004 — Frontend Testing Foundation
 
-GitHub PR/merge status remains unconfirmed.
+Established Vitest, React Testing Library and jsdom.
 
----
+Added 12 Customer Management component tests covering directory, creation, editing and archive workflows, including success, failure and loading states.
 
-## 13. Next milestone — Frontend testing foundation
+Typecheck, frontend tests, lint/architecture checks and production build passed.
 
-With the backend security and tenant-isolation scenarios covered by QA-003, the next proposed quality slice is frontend testing.
+PR #8 was merged to `develop`.
 
-Suggested focus:
+## 13. Current milestone — AROVIA-QA-005 End-to-End Testing Foundation
 
-1. Establish a consistent frontend component testing framework.
-2. Add tests for the Customer directory.
-3. Test customer creation and editing interactions.
-4. Test archive confirmation and cancellation.
-5. Test API error and loading states.
-6. Validate that organization selection and authenticated workspace behavior are handled correctly.
-7. Evaluate Playwright for critical end-to-end workflows after component testing is established.
+**Objective:** Establish a small, reliable Playwright browser-testing foundation for the most important existing Arovia workflows.
 
-Keep frontend testing as an independently validated slice. Avoid introducing broad test infrastructure or abstractions without a concrete need.
+Keep the milestone deliberately focused. QA-004 already provides component-level coverage; QA-005 should validate that the frontend, backend, authentication and organization context work together through a real browser.
+
+### In-scope user journeys
+
+1. **Authentication and workspace**
+    - Log in using a dedicated test account.
+    - Access an authenticated workspace route.
+    - Log out.
+    - Verify protected-route behavior after logout.
+
+2. **Organization context**
+    - Select an available organization.
+    - Verify the workspace operates with the selected organization context.
+
+3. **Customer lifecycle**
+    - Open the customer directory.
+    - Create a customer.
+    - Verify the customer appears in the directory.
+    - Edit the customer.
+    - Archive the customer.
+
+### Implementation expectations
+
+- Use Playwright for browser automation.
+- Use a dedicated E2E test account and test database.
+- Do not make automated tests depend on real email delivery.
+- Reuse existing application APIs and workflows.
+- Keep test data isolated and clean up test-created data reliably.
+- Do not weaken production authentication, authorization or CSRF behavior to simplify browser tests.
+- Avoid broad test abstractions or unrelated production changes.
+
+### CI integration
+
+Add an E2E job to the existing GitHub Actions workflow.
+
+The job should install browser dependencies, start the application stack using an isolated test configuration, execute the selected Playwright journeys and publish useful test reports on failure.
+
+The existing backend and frontend verification jobs must remain intact.
+
+### Completion criteria
+
+- Playwright is configured and runs locally.
+- The three critical journeys pass.
+- Test data setup and cleanup are reliable.
+- E2E execution is integrated into GitHub Actions.
+- Existing backend and frontend checks continue to pass.
+- `docs/AROVIA_HANDOFF.md` is updated with implementation details and actual validation results.
+
+Do not expand this milestone into exhaustive browser coverage, signup/email verification automation or unrelated security testing.
 
 ## 14. Immediate development checkpoint
 
-Before starting the next implementation slice:
+Current local branch:
 
-1. Verify the local Git working tree and current branch.
-2. Confirm whether QA-002 has been pushed or merged.
-3. Confirm whether QA-003 has been pushed or merged.
-4. Preserve the passing QA-003 test suite.
-5. Do not modify the production security configuration merely to simplify tests.
-6. Run the relevant backend validation again when preparing the next integration or CI change.
+`feature/AROVIA-QA-005-e2e-testing`
 
-**Current achievement:** Arovia now has automated HTTP-level evidence for the authentication, CSRF and customer tenant-isolation boundaries covered by QA-003.
+Expected base:
+
+`0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
+
+Before implementation:
+
+1. Restore and save this complete handoff document.
+2. Review the resulting Git diff and ensure no architecture or milestone history was lost.
+3. Commit the documentation update separately from QA-005 implementation.
+4. Inspect the existing frontend route structure, authentication flow, organization switcher, customer workspace and backend test configuration.
+5. Define the smallest viable Playwright setup based on the actual application.
+6. Implement and validate the three selected browser journeys.
+7. Integrate the E2E job into CI.
+8. Update this handoff with actual results.
+
+**Current achievement:** Arovia has backend unit/integration testing, HTTP-level security and tenant-isolation coverage, frontend component testing and CI verification. QA-005 adds the missing browser-level validation for critical user workflows.
