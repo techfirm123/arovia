@@ -7,11 +7,9 @@ on:
       - develop
   workflow_dispatch:
 
-# Read-only access is sufficient for validation.
 permissions:
   contents: read
 
-# Cancel obsolete runs when another commit is pushed to the same PR.
 concurrency:
   group: arovia-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -106,5 +104,113 @@ jobs:
       - name: Run TypeScript validation
         run: pnpm typecheck:web
 
+      - name: Run frontend component tests
+        run: pnpm test:web
+
       - name: Build production application
         run: pnpm build:web
+
+  e2e:
+    name: Browser end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: arovia_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d arovia_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      AROVIA_DB_URL: jdbc:postgresql://localhost:5432/arovia_test
+      AROVIA_DB_USERNAME: postgres
+      AROVIA_DB_PASSWORD: postgres
+      AROVIA_WEB_BASE_URL: http://localhost:3000
+      AROVIA_WEB_ORIGIN: http://localhost:3000
+      AROVIA_SESSION_COOKIE_SECURE: 'false'
+      AROVIA_SCHEDULING_ENABLED: 'false'
+      AROVIA_OUTBOX_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      AROVIA_RATE_LIMIT_HMAC_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+      E2E_API_BASE_URL: http://localhost:8080
+      E2E_BASE_URL: http://localhost:3000
+      E2E_BOOTSTRAP: 'true'
+      E2E_USER_EMAIL: arovia-e2e-${{ github.run_id }}-${{ github.run_attempt }}@example.test
+      E2E_USER_PASSWORD: 'correct horse battery staple'
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGDATABASE: arovia_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @arovia/web exec playwright install --with-deps chromium
+
+      - name: Start API against isolated PostgreSQL
+        working-directory: apps/api
+        run: |
+          nohup ./gradlew --no-daemon bootRun > /tmp/arovia-api.log 2>&1 &
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8080/actuator/health/readiness > /dev/null; then
+              echo "Arovia API is ready."
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "Arovia API did not become ready."
+          cat /tmp/arovia-api.log
+          exit 1
+
+      - name: Run browser end-to-end tests
+        run: pnpm --filter @arovia/web exec playwright test --workers=1
+
+      - name: Upload Playwright report and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arovia-playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+            /tmp/arovia-api.log
+          if-no-files-found: warn
+          retention-days: 14
