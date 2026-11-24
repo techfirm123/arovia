@@ -123,18 +123,18 @@ export default function CustomersWorkspace() {
       const result = await fetchCustomers(search, page);
       setData(result);
 
-      if (
-        selected &&
-        !result.items.some((item) => item.id === selected.id)
-      ) {
-        setSelected(null);
-      }
+      setSelected((current) =>
+        current &&
+        !result.items.some((item) => item.id === current.id)
+          ? null
+          : current,
+      );
     } catch (exception) {
       setError(getErrorMessage(exception));
     } finally {
       setLoading(false);
     }
-  }, [page, search, selected]);
+  }, [page, search]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
