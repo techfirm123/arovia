@@ -1,3 +1,4 @@
+
 {
   "name": "arovia",
   "private": true,
@@ -10,6 +11,8 @@
     "build:web": "pnpm --filter @arovia/web build",
     "lint:web": "pnpm --filter @arovia/web lint",
     "typecheck:web": "pnpm --filter @arovia/web typecheck",
-    "check:architecture:web": "pnpm --filter @arovia/web architecture"
+    "check:architecture:web": "pnpm --filter @arovia/web architecture",
+    "test:web": "pnpm --filter @arovia/web test",
+    "test:watch:web": "pnpm --filter @arovia/web test:watch"
   }
 }
