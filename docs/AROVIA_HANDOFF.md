@@ -2,7 +2,7 @@
 
 **Current milestone:** AROVIA-QA-005 — End-to-End Testing Foundation  
 **Previous milestone:** AROVIA-QA-004 — Frontend Testing Foundation  
-**Implementation status:** QA-004 complete and merged to `develop` through PR #8.  
+**Implementation status:** QA-005 implementation and CI validation complete. All three GitHub Actions jobs passed in PR #9. The handoff update is ready to be committed on the feature branch.  
 **Current branch:** `feature/AROVIA-QA-005-e2e-testing`  
 **Last updated:** 24 November 2026
 
@@ -442,6 +442,94 @@ Establish a maintainable frontend component testing foundation and cover the exi
 
 QA-004 establishes component-level testing. It does not replace browser-level end-to-end testing.
 
+#### AROVIA-QA-005 — End-to-End Testing Foundation
+
+**Status:** Implementation complete; all three GitHub Actions jobs passed in PR #9, workflow run #9.
+
+**Objective:**
+
+Establish a reliable Playwright browser-testing foundation for the most important existing Arovia workflows. QA-004 provides component-level coverage; QA-005 validates that the frontend, backend, authentication and organization context work together through a real browser.
+
+**Browser test coverage — 5 tests:**
+
+| Spec | Journey | Verified behavior |
+|---|---|---|
+| `authentication.spec.ts` | Protected-route redirect | Visiting `/app` without authentication redirects to `/login`. |
+| `authentication.spec.ts` | Login and workspace | The E2E user signs in and reaches the authenticated workspace. |
+| `authentication.spec.ts` | Logout and route protection | Logout returns to the public homepage; subsequent `/app` access redirects to login. |
+| `organization.spec.ts` | Organization context | Selects an organization and verifies the selection persists after reload. |
+| `customer-lifecycle.spec.ts` | Customer lifecycle | Creates, edits, verifies and archives a customer. |
+
+**Implementation files:**
+
+- `.github/workflows/ci.yml` — adds the browser E2E CI job while retaining backend and frontend verification.
+- `apps/web/playwright.config.ts` — configures the Chromium project, CI behavior, reporters, failure artifacts and Next.js web server.
+- `apps/web/e2e/global-setup.ts` — registers a run-specific test account, performs isolated-database email-verification activation, logs in through the real API, creates an organization and selects it.
+- `apps/web/e2e/support/auth.ts` — reusable browser login and organization-selection helpers.
+- `apps/web/e2e/authentication.spec.ts` — three authentication and protected-route tests.
+- `apps/web/e2e/organization.spec.ts` — organization selection and persistence test.
+- `apps/web/e2e/customer-lifecycle.spec.ts` — customer create/edit/archive test.
+- `apps/web/package.json` — adds the Playwright dependency and E2E, UI and report commands.
+- `pnpm-lock.yaml` — records the Playwright dependency and resolved packages.
+
+**Test isolation and security decisions:**
+
+- CI provisions a fresh PostgreSQL 18 service database named `arovia_test` for the E2E job.
+- The E2E email includes the GitHub run ID and attempt so each workflow attempt receives a unique account.
+- Registration and login go through the real API. The production password encoder, session handling and CSRF protections remain in use.
+- Because CI does not send real email, global setup marks the newly registered account verified directly in the disposable E2E database. This is test-environment setup only; production verification behavior is not weakened.
+- The account activation statement is passed to `psql` over standard input using `-f -`, allowing psql to substitute the configured variable before executing SQL.
+- Test data is isolated to the disposable database for the CI run. The PostgreSQL service container is discarded after the job; this is the cleanup boundary used by CI.
+- The E2E setup uses the API to create the user and organization. The browser tests use that account and organization rather than relying on pre-existing data.
+
+**Playwright configuration:**
+
+- Chromium project using the Desktop Chrome device profile.
+- Sequential execution with `fullyParallel: false`.
+- CI runs with one worker and up to two retries.
+- CI reporters: GitHub annotations and HTML report.
+- Traces, screenshots and videos are retained on failure.
+- Playwright starts the Next.js development server and waits for the configured web base URL.
+- Package scripts provide `test:e2e`, `test:e2e:ui` and `test:e2e:report`.
+
+**CI integration:**
+
+The E2E job:
+
+1. Starts PostgreSQL 18 with the dedicated `arovia_test` database.
+2. Installs Java 21, Gradle, Node.js 24, pnpm 11.22.0 and frontend dependencies.
+3. Installs Playwright Chromium and its required system dependencies.
+4. Starts the Spring Boot API against the isolated database.
+5. Polls `/actuator/health/readiness` before proceeding.
+6. Runs `pnpm --filter @arovia/web exec playwright test --workers=1`.
+7. Uploads the Playwright report, test results and API diagnostics as artifacts.
+
+The existing backend and frontend jobs remain intact.
+
+**Final validation:**
+
+GitHub Actions PR #9, workflow run #9:
+
+- Backend verification: **Passed** — backend unit and architecture tests, followed by PostgreSQL integration tests.
+- Frontend verification: **Passed** — lint and architecture checks, TypeScript validation, frontend component tests and production build.
+- Browser end-to-end tests: **Passed** — API startup/readiness, Playwright global setup and browser tests.
+- Playwright summary: **5 passed (13.6s)**.
+
+The workflow run validated implementation commit:
+
+`4d6e605b3f6a92c953d43bf173b357041473a4df`
+
+Workflow run: https://github.com/techfirm123/arovia/actions/runs/45402450701  
+Pull request: https://github.com/techfirm123/arovia/pull/9
+
+**Coverage boundaries:**
+
+- The five tests validate the three selected critical workflows only; they are not exhaustive application-wide browser coverage.
+- Signup and email verification are not browser-driven scenarios in this milestone. Global setup creates the dedicated account through the registration API and bypasses email verification only in the disposable CI database.
+- Production CORS, secure-cookie behavior, SMTP delivery, production secrets and deployment configuration still require environment-specific validation.
+
+**Completion criteria met:** Playwright is configured, the three selected workflows pass, E2E execution is integrated into CI, backend and frontend checks remain green, and this handoff records the implementation and verified results.
+
 ## 6. Database migrations
 
 Flyway migration history relevant to the current implementation:
@@ -503,6 +591,8 @@ The security configuration uses explicit endpoint authorization and a deny-by-de
 
 The tests verify that cross-organization operations return 404 and do not modify the original customer data.
 
+**QA-005 browser validation:** The five browser tests provide additional end-to-end evidence for login, logout, protected-route behavior, organization selection/persistence and the customer lifecycle. They complement, rather than replace, the HTTP-level security tests.
+
 ## 8. Architecture tests
 
 The existing `PlatformArchitectureTest` includes rules for:
@@ -516,7 +606,7 @@ These rules preserve the intended dependency direction as new capabilities are i
 
 ## 9. Validation status
 
-The following results have been reported by the developer.
+The following combines developer-reported local validation with the directly verified GitHub Actions results for PR #9.
 
 | Area | Command / check | Result |
 |---|---|---|
@@ -532,6 +622,10 @@ The following results have been reported by the developer.
 | QA-004 frontend production build | `pnpm --filter @arovia/web build` | Passed |
 | GitHub Actions — Backend verification | PR #5 | Passed |
 | GitHub Actions — Frontend verification | PR #5 | Passed |
+| QA-005 Playwright browser suite | PR #9, run #9 | Passed — 5 tests in 13.6 seconds |
+| GitHub Actions — Backend verification | PR #9, run #9 | Passed — unit, architecture and PostgreSQL integration checks |
+| GitHub Actions — Frontend verification | PR #9, run #9 | Passed — lint/architecture, TypeScript, component tests and production build |
+| GitHub Actions — Browser end-to-end tests | PR #9, run #9 | Passed — API readiness, global setup and all 5 browser tests |
 | Customer creation | Manual workflow | Passed |
 | Customer persistence after refresh | Manual workflow | Passed |
 | Customer directory and details | Manual workflow | Passed |
@@ -543,12 +637,13 @@ The following results have been reported by the developer.
 
 - QA-003 validates the eight listed HTTP security and tenant-isolation scenarios.
 - QA-004 validates the listed Customer Management frontend component behaviors.
-- Neither milestone establishes complete application-wide security or browser end-to-end coverage.
-- QA-005 is intended to establish browser-level coverage for the critical workflows.
+- QA-005 validates five browser tests across the three selected critical workflows; it is not exhaustive application-wide browser coverage.
+- Signup and email verification are not browser journeys in QA-005. Global setup creates the test account through the registration API and bypasses email verification only in the disposable E2E database.
+- The CI run validates the isolated GitHub Actions stack; it does not imply production deployment validation.
 
 ## 10. Current limitations and follow-ups
 
-- Playwright end-to-end coverage for critical business workflows is pending.
+- Browser end-to-end coverage is established for the three QA-005 workflows. Additional browser coverage for other modules and exception paths remains future work.
 - Identity, Organization and Customer need a consolidated automated coverage review.
 - Role-based business capability authorization policy has not yet been fully established.
 - Revoked/stale membership behavior should receive dedicated HTTP-level regression coverage.
@@ -565,7 +660,7 @@ Development branch:
 
 `develop`
 
-Latest verified `develop` commit:
+Latest verified `develop` commit before PR #9:
 
 `0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
 
@@ -593,13 +688,16 @@ Other implementation milestones:
 - Merge commit: `0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
 - PR #8: https://github.com/techfirm123/arovia/pull/8
 
-### Current QA-005 working branch
+### QA-005 delivery details
 
-`feature/AROVIA-QA-005-e2e-testing`
+- Feature branch: `feature/AROVIA-QA-005-e2e-testing`
+- Implementation commit validated by the green workflow run: `4d6e605b3f6a92c953d43bf173b357041473a4df`
+- Pull request: https://github.com/techfirm123/arovia/pull/9
+- GitHub Actions workflow run #9: https://github.com/techfirm123/arovia/actions/runs/45402450701
+- Workflow run ID: `45402450701`
+- Workflow result: all three jobs passed; Playwright reported `5 passed (13.6s)`.
 
-The local branch was created from the latest verified `develop` commit above.
-
-The handoff update is a local working-tree change and must be committed by the developer after reviewing and saving this document.
+**PR #9 is not yet marked as merged in this handoff.** The handoff update should be committed to the feature branch, reviewed, and included in the PR before merging.
 
 ## 12. Milestone history
 
@@ -669,79 +767,117 @@ Typecheck, frontend tests, lint/architecture checks and production build passed.
 
 PR #8 was merged to `develop`.
 
-## 13. Current milestone — AROVIA-QA-005 End-to-End Testing Foundation
+### AROVIA-QA-005 — End-to-End Testing Foundation
+
+Established Playwright with Chromium and integrated browser execution into the existing GitHub Actions workflow.
+
+Added five browser tests covering:
+
+- Unauthenticated protected-route redirection.
+- Login and authenticated workspace access.
+- Logout and protected-route enforcement.
+- Organization selection and persistence after reload.
+- Customer creation, editing and archiving.
+
+The CI workflow now has three verification jobs: backend, frontend and browser end-to-end tests.
+
+The E2E job uses an isolated PostgreSQL 18 database, provisions a unique test account and organization through the real API workflow, starts the API, waits for readiness, and runs the browser tests.
+
+The account verification step is bypassed only in the disposable E2E database to avoid a dependency on real email delivery. The real password encoder, session and CSRF flows remain in use.
+
+PR #9 workflow run #9 passed all three jobs. All five Playwright tests passed in 13.6 seconds.
+
+PR: https://github.com/techfirm123/arovia/pull/9  
+Workflow: https://github.com/techfirm123/arovia/actions/runs/45402450701
+
+## 13. Completed milestone — AROVIA-QA-005 End-to-End Testing Foundation
+
+**Status:** Implementation complete; all three GitHub Actions jobs passed in PR #9, workflow run #9.
 
 **Objective:** Establish a small, reliable Playwright browser-testing foundation for the most important existing Arovia workflows.
 
-Keep the milestone deliberately focused. QA-004 already provides component-level coverage; QA-005 should validate that the frontend, backend, authentication and organization context work together through a real browser.
-
-### In-scope user journeys
+### Implemented user journeys
 
 1. **Authentication and workspace**
-    - Log in using a dedicated test account.
-    - Access an authenticated workspace route.
-    - Log out.
-    - Verify protected-route behavior after logout.
+   - Unauthenticated access to `/app` redirects to `/login`.
+   - The dedicated E2E user can sign in and access the authenticated workspace.
+   - Logout returns to the public homepage and protected-route access is denied afterward.
 
 2. **Organization context**
-    - Select an available organization.
-    - Verify the workspace operates with the selected organization context.
+   - Global setup provisions an organization for the E2E user.
+   - The browser test selects an organization and verifies the selected organization remains active after a page reload.
 
 3. **Customer lifecycle**
-    - Open the customer directory.
-    - Create a customer.
-    - Verify the customer appears in the directory.
-    - Edit the customer.
-    - Archive the customer.
+   - Open the customer directory.
+   - Create a customer and verify it appears in the directory.
+   - Open customer details and edit the name.
+   - Verify the updated customer is visible.
+   - Archive the customer and verify it is removed from the active directory.
 
-### Implementation expectations
+### Implementation files
 
-- Use Playwright for browser automation.
-- Use a dedicated E2E test account and test database.
-- Do not make automated tests depend on real email delivery.
-- Reuse existing application APIs and workflows.
-- Keep test data isolated and clean up test-created data reliably.
-- Do not weaken production authentication, authorization or CSRF behavior to simplify browser tests.
-- Avoid broad test abstractions or unrelated production changes.
+- `.github/workflows/ci.yml` — adds the browser E2E CI job while retaining backend and frontend verification.
+- `apps/web/playwright.config.ts` — Chromium project, CI settings, reporters, failure artifacts and Next.js web server.
+- `apps/web/e2e/global-setup.ts` — API-based test account registration, isolated-database verification activation, login, organization provisioning and active organization selection.
+- `apps/web/e2e/support/auth.ts` — reusable browser login and organization-selection helpers.
+- `apps/web/e2e/authentication.spec.ts` — three authentication and protected-route tests.
+- `apps/web/e2e/organization.spec.ts` — organization selection and persistence test.
+- `apps/web/e2e/customer-lifecycle.spec.ts` — customer create/edit/archive test.
+- `apps/web/package.json` and `pnpm-lock.yaml` — Playwright dependency and E2E/report scripts.
 
-### CI integration
+### Test isolation and security decisions
 
-Add an E2E job to the existing GitHub Actions workflow.
+- CI provisions a fresh PostgreSQL 18 service database named `arovia_test` for the E2E job.
+- The E2E email includes the GitHub run ID and attempt so each workflow attempt receives a unique account.
+- Registration and login go through the real API. The production password encoder, session handling and CSRF protections remain in use.
+- Because CI does not send real email, global setup marks the newly registered account verified directly in the disposable E2E database. This is test-environment setup only; production verification behavior is not weakened.
+- The account activation statement is passed to `psql` over standard input using `-f -`, allowing psql to substitute the configured variable before executing SQL.
+- Test data is isolated to the disposable database for the CI run. The service container is discarded after the job; this is the cleanup boundary used by CI.
 
-The job should install browser dependencies, start the application stack using an isolated test configuration, execute the selected Playwright journeys and publish useful test reports on failure.
+### CI behavior
 
-The existing backend and frontend verification jobs must remain intact.
+The E2E job starts PostgreSQL 18 with the dedicated `arovia_test` database; installs Java 21, Gradle, Node.js 24, pnpm 11.22.0 and frontend dependencies; installs Playwright Chromium and required system dependencies; starts the Spring Boot API; and waits for `/actuator/health/readiness`.
 
-### Completion criteria
+It then runs `pnpm --filter @arovia/web exec playwright test --workers=1`. Playwright starts the Next.js development server and executes the five browser tests. The HTML report, test results and API diagnostics are uploaded as artifacts.
 
-- Playwright is configured and runs locally.
-- The three critical journeys pass.
-- Test data setup and cleanup are reliable.
-- E2E execution is integrated into GitHub Actions.
-- Existing backend and frontend checks continue to pass.
-- `docs/AROVIA_HANDOFF.md` is updated with implementation details and actual validation results.
+The existing backend and frontend jobs remain intact. Backend verification runs unit/architecture and PostgreSQL integration tests. Frontend verification runs lint/architecture, TypeScript validation, component tests and the production build.
 
-Do not expand this milestone into exhaustive browser coverage, signup/email verification automation or unrelated security testing.
+### Final validation
 
-## 14. Immediate development checkpoint
+GitHub Actions PR #9, workflow run #9:
 
-Current local branch:
+- Backend verification: **passed** — backend unit/architecture tests and PostgreSQL integration tests.
+- Frontend verification: **passed** — lint/architecture, TypeScript validation, component tests and production build.
+- Browser end-to-end tests: **passed** — API readiness and Playwright execution completed successfully.
+- Playwright summary: **5 passed (13.6s)**.
+
+Workflow run: https://github.com/techfirm123/arovia/actions/runs/45402450701  
+Pull request: https://github.com/techfirm123/arovia/pull/9
+
+### Coverage boundaries
+
+- The five tests validate the three selected critical journeys only; they are not exhaustive application-wide browser coverage.
+- Signup and email verification are not browser-driven scenarios in this milestone. Global setup creates the dedicated account through the registration API and bypasses email verification only in the disposable CI database.
+- Production CORS, secure-cookie behavior, SMTP delivery, production secrets and deployment configuration still require environment-specific validation.
+
+**Completion criteria met:** Playwright is configured, the three selected workflows pass, E2E execution is integrated into CI, backend and frontend checks remain green, and this handoff records the implementation and verified results.
+
+## 14. Post-QA-005 checkpoint
+
+QA-005 implementation is complete on:
 
 `feature/AROVIA-QA-005-e2e-testing`
 
-Expected base:
+The implementation was based on the QA-004 `develop` commit:
 
 `0c6dbfb1424e90fb23cdc0e93b375f2a348b99f3`
 
-Before implementation:
+The PR branch contains the Playwright configuration, five browser tests, isolated CI bootstrap and the E2E workflow job. This document update completes the handoff for the milestone.
 
-1. Restore and save this complete handoff document.
-2. Review the resulting Git diff and ensure no architecture or milestone history was lost.
-3. Commit the documentation update separately from QA-005 implementation.
-4. Inspect the existing frontend route structure, authentication flow, organization switcher, customer workspace and backend test configuration.
-5. Define the smallest viable Playwright setup based on the actual application.
-6. Implement and validate the three selected browser journeys.
-7. Integrate the E2E job into CI.
-8. Update this handoff with actual results.
+**Validated implementation result:** PR #9 workflow run #9 passed all three CI jobs, including all five Playwright tests.
 
-**Current achievement:** Arovia has backend unit/integration testing, HTTP-level security and tenant-isolation coverage, frontend component testing and CI verification. QA-005 adds the missing browser-level validation for critical user workflows.
+PR #9: https://github.com/techfirm123/arovia/pull/9
+
+After committing this handoff update, verify the PR's latest checks before merging. The documentation-only commit may trigger a fresh CI run under the existing pull-request workflow.
+
+Continue with the next small vertical slice after QA-005 is integrated into `develop`. Preserve the established workflow: implement a complete business capability, validate backend/frontend/browser behavior as appropriate, and update this handoff with verified outcomes.
