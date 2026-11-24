@@ -188,7 +188,7 @@ jobs:
           nohup ./gradlew --no-daemon bootRun > /tmp/arovia-api.log 2>&1 &
 
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://localhost:8080/actuator/health > /dev/null; then
+            if curl --fail --silent http://localhost:8080/actuator/health/readiness > /dev/null; then
               echo "Arovia API is ready."
               exit 0
             fi
