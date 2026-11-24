@@ -13,8 +13,8 @@ const EMAIL = process.env.E2E_USER_EMAIL;
 const PASSWORD = process.env.E2E_USER_PASSWORD;
 
 type CsrfResponse = {
+  headerName: string;
   token: string;
-  headerName?: string;
 };
 
 async function requireSuccess(
@@ -42,10 +42,14 @@ async function getCsrf(
     throw new Error('The API did not return a CSRF token.');
   }
 
-  return {
-    token: body.token,
-    headerName: body.headerName ?? 'X-CSRF-TOKEN',
-  };
+ if (!body.token || !body.headerName) {
+   throw new Error('The API did not return a complete CSRF token response.');
+ }
+
+ return {
+   token: body.token,
+   headerName: body.headerName,
+ };
 }
 
 function activateRegisteredAccount(email: string): void {
